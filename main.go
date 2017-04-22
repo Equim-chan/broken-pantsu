@@ -12,15 +12,13 @@ import (
 )
 
 type InBoundMessage struct {
-	Username string `json:"username"`
-	Type     string `json:"type"`
-	Message  string `json:"message"`
+	Type    string `json:"type"`
+	Message string `json:"message"`
 }
 
 type OutBoundMessage struct {
-	Username string `json:"username"`
-	Type     string `json:"type"`
-	Message  string `json:"message"`
+	Type    string `json:"type"`
+	Message string `json:"message"`
 }
 
 var (
@@ -51,7 +49,7 @@ func main() {
 		http.ServeFile(w, r, "./public/chat.html")
 	})
 	http.HandleFunc("/register", register)
-	http.HandleFunc("/love", handleConnections)
+	http.HandleFunc("/loveStream", handleConnections)
 
 	go handleBroadcast()
 
@@ -87,44 +85,45 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// TODO: 保证 map 等的操作
+	// TODO: defer 还要保证 map 等的操作
 	defer ws.Close()
 
-	// TODO: 保证 client 的合法性
-	client := &Client{}
-	client.Conn = ws
-	// TEST ONLY
-	client.Username = "Equim"
-	client.Likes = Yuri | Loli | Schoolgirl | Vanilla
-	// |||
+	// 获取来自客户端的第一条消息，即自己的资料
+	var identity Identity
+	if err := ws.ReadJSON(&identity); err != nil {
+		ws.WriteJSON(&OutBoundMessage{"reject", "malformed JSON request."})
+		return
+	}
+
+	client := NewClient(ws, &identity)
+	log.Println(client)
 
 	locker.Lock()
 	onlineUsers++
 	clientsPool[client] = true
 	locker.Unlock()
 
-	broadcast <- &OutBoundMessage{"", "online users", strconv.Itoa(onlineUsers)}
+	broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 
-	// 确认池里有至少两个人
-	for {
-		if len(clientsPool) > 1 {
-			break
-		}
+	// 确保池里有至少两个人
+	for len(clientsPool) <= 1 {
 	}
 
 	// 死锁可能性？
 	locker.Lock()
 	partner, ok := clientsMap[client]
 	if !ok {
-		var maxSim uint8 = 0
+		var maxSim uint8
 		// TODO: 考虑更苛刻的条件，比如 maxSim < 3
 		for partner == nil {
+			maxSim = 0
 			for p, available := range clientsPool {
 				if !available || p == client {
 					continue
 				}
-				log.Println(client.SimilarityWith(p))
-				if sim := client.SimilarityWith(p); sim > maxSim {
+				sim := client.SimilarityWith(p)
+				// 匹配相似度最高的。如果遇到相似度相同的，则匹配对方喜好数最小的
+				if sim > maxSim || sim == maxSim && maxSim > 0 && p.LikesCount() < partner.LikesCount() {
 					partner = p
 					maxSim = sim
 				}
@@ -135,8 +134,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	locker.Unlock()
 
-	log.Println(clientsMap[client].Username)
-
 	for {
 		var inMsg InBoundMessage
 		if err := ws.ReadJSON(&inMsg); err != nil {
@@ -146,7 +143,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		}
 
 		outMsg := &OutBoundMessage{}
-		outMsg.Username = inMsg.Username
 
 		// TODO: 有没有 switch 的必要？
 		switch inMsg.Type {
@@ -156,7 +152,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		case "typing":
 			outMsg.Type = "typing"
 			outMsg.Message = inMsg.Message
-			log.Println("typing:", inMsg.Message)
 		}
 
 		if err := partner.Conn.WriteJSON(outMsg); err != nil {

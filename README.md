@@ -33,6 +33,7 @@ There are lots of things to do at the moment...
 * [ ] check for XSS
 * [x] separate HTML, CSS and JS
 * [ ] add browser-out-of-date warning
+* [ ] add savelog button
 * [ ] _add auto-reconnection after dc_
 
 ### Features

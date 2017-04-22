@@ -6,11 +6,6 @@ $(function () {
       type: 'POST',
       url: '/register',
       contentType: 'application/json; charset=utf-8',
-      /*
-      data: JSON.stringify({
-        likes: $('#likes').val()
-      }),
-      */
       data: JSON.stringify({
         likes: ['yuri', 'loli', 'schoolgirl', 'vanilla']
       }),
