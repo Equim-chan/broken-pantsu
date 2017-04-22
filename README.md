@@ -1,2 +1,2 @@
-# broken-pantsu
-:cupid: Love, better than sorry.
+# Broken Pantsu
+There are lots of things to do at the moment...
