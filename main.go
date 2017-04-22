@@ -60,9 +60,9 @@ func main() {
 
 	go handleMessages()
 
-	log.Println("Serving at *:5000...")
-	log.Println("http://localhost:5000")
-	log.Fatal(http.ListenAndServe(":5000", nil))
+	log.Println("Serving at localhost:56833...")
+	log.Println("http://localhost:56833")
+	log.Fatal(http.ListenAndServe("localhost:56833", nil))
 }
 
 type applicantJSON struct {

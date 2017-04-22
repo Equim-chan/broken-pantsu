@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Socket.IO chat</title>
+    <title>Broken Pantsu</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body { font: 13px Helvetica, Arial; }
@@ -15,14 +15,16 @@
     <script src="//cdn.bootcss.com/jquery/3.2.1/jquery.min.js"></script>
     <script>
       $(function () {
-        var ws = new WebSocket('ws://localhost:5000/stream');
+        var wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/stream';
+        var ws = new WebSocket(wsUrl);
 
-        $('form').submit(function() {
+        $('form').submit(function () {
           ws.send(JSON.stringify({
             username: 'Equim',
             message: $('#m').val()
           }));
           $('#m').val('');
+          $('#m').focus();
           return false;
         });
 
