@@ -13,6 +13,6 @@ util.entityMap = {
 
 util.escapeHtml = function (string) {
   return String(string).replace(/[&<>"'`=\/]/g, function (s) {
-    return this.entityMap[s];
+    return util.entityMap[s];
   });
 };

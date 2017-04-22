@@ -40,7 +40,7 @@ var (
 func main() {
 	http.HandleFunc("/love", handleConnections)
 	http.HandleFunc("/access", access)
-	//http.Handle("/", http.FileServer(http.Dir("./public")))
+	http.Handle("/asset/", http.StripPrefix("/asset", http.FileServer(http.Dir("./public/asset"))))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		token, err := r.Cookie("token")
 		if err != nil {

@@ -13,7 +13,7 @@ $(function () {
 
   ws.onmessage = function (e) {
     var data = JSON.parse(e.data);
-    var message = escapeHtml(data.message);
+    var message = util.escapeHtml(data.message);
     $('#messages').append($('<li>').html(emojione.toImage(message)));
   };
 
