@@ -6,7 +6,7 @@
 * __Love, better than sorry__
 
 ## Dependencies
-* github.com/gorilla/websocket
+* [github.com/gorilla/websocket](https://github.com/gorilla/websocket)
 
 ## TODO
 There are lots of things to do at the moment...
@@ -21,7 +21,7 @@ There are lots of things to do at the moment...
 
 ### Frontend
 * [ ] complete the UI
-* [ ] add emoji support
+* [x] add emoji support
 * [ ] check for XSS
 * [ ] separate HTML, CSS and JS
 * [ ] add browser-out-of-date warning

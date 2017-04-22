@@ -38,7 +38,7 @@ var (
 )
 
 func main() {
-	http.HandleFunc("/stream", handleConnections)
+	http.HandleFunc("/love", handleConnections)
 	http.HandleFunc("/access", access)
 	//http.Handle("/", http.FileServer(http.Dir("./public")))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

@@ -12,10 +12,30 @@
       #messages li { padding: 5px 10px; }
       #messages li:nth-child(odd) { background: #eee; }
     </style>
-    <script src="//cdn.bootcss.com/jquery/3.2.1/jquery.min.js"></script>
+    <link href="//cdnjs.cloudflare.com/ajax/libs/emojione/2.2.7/assets/css/emojione.min.css" rel="stylesheet">
+    <script src="//cdnjs.cloudflare.com/ajax/libs/emojione/2.2.7/lib/js/emojione.min.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+    <script>
+      var entityMap = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+        '/': '&#x2F;',
+        '`': '&#x60;',
+        '=': '&#x3D;'
+      };
+
+      function escapeHtml (string) {
+        return String(string).replace(/[&<>"'`=\/]/g, function (s) {
+          return entityMap[s];
+        });
+      }
+    </script>
     <script>
       $(function () {
-        var wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/stream';
+        var wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/love';
         var ws = new WebSocket(wsUrl);
 
         $('form').submit(function () {
@@ -24,13 +44,13 @@
             message: $('#m').val()
           }));
           $('#m').val('');
-          $('#m').focus();
           return false;
         });
 
         ws.onmessage = function (e) {
-          var message = JSON.parse(e.data).message;
-          $('#messages').append($('<li>').text(message));
+          var data = JSON.parse(e.data);
+          var message = escapeHtml(data.message);
+          $('#messages').append($('<li>').html(emojione.toImage(message)));
         };
 
         ws.onclose = function () {
