@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-/*
 type InBoundMessage struct {
 	Username string `json:"username"`
 	Type     string `json:"type"`
@@ -22,25 +22,18 @@ type OutBoundMessage struct {
 	Type     string `json:"type"`
 	Message  string `json:"message"`
 }
-*/
-
-type Message struct {
-	Username string `json:"username"`
-	Message  string `json:"message"`
-}
 
 var (
 	locker      sync.Mutex
 	onlineUsers = 0
 	clientsPool = make(map[*websocket.Conn]bool)
-	broadcast   = make(chan Message)
+	broadcast   = make(chan *OutBoundMessage, 10)
 	upgrader    = websocket.Upgrader{}
+	clientsMap  = make(map[*websocket.Conn]*websocket.Conn)
 )
 
 func main() {
-	http.HandleFunc("/love", handleConnections)
-	http.HandleFunc("/access", access)
-	http.Handle("/asset/", http.StripPrefix("/asset", http.FileServer(http.Dir("./public/asset"))))
+	http.Handle("/asset/", http.FileServer(http.Dir("./public")))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		token, err := r.Cookie("token")
 		if err != nil {
@@ -57,8 +50,10 @@ func main() {
 	http.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "./public/chat.html")
 	})
+	http.HandleFunc("/access", access)
+	http.HandleFunc("/love", handleConnections)
 
-	go handleMessages()
+	go handleBroadcast()
 
 	log.Println("Serving at localhost:56833...")
 	log.Println("http://localhost:56833")
@@ -95,27 +90,48 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	defer ws.Close()
 
 	locker.Lock()
+	onlineUsers++
 	clientsPool[ws] = true
 	locker.Unlock()
 
+	broadcast <- &OutBoundMessage{"", "online users", strconv.Itoa(onlineUsers)}
+
+	// TODO: 下面的 for 之前进行匹配
+
 	for {
-		var msg Message
-		if err := ws.ReadJSON(&msg); err != nil {
+		var inMsg InBoundMessage
+		if err := ws.ReadJSON(&inMsg); err != nil {
 			log.Printf("recv error: %v", err)
 			delete(clientsPool, ws)
 			break
 		}
 
-		broadcast <- msg
+		outMsg := &OutBoundMessage{}
+		outMsg.Username = "Equim"
+
+		// TODO: 有没有 switch 的必要？
+		switch inMsg.Type {
+		case "chat":
+			outMsg.Type = "chat"
+			outMsg.Message = inMsg.Message
+		case "typing":
+			outMsg.Type = "typing"
+			outMsg.Message = inMsg.Message
+			log.Println("typing:", inMsg.Message)
+		}
+
+		// TODO: 这里超过缓存量的话会阻塞，考虑一下延迟的问题。如果对方大量 spam，或者甚至对方断线的情况
+		broadcast <- outMsg
 	}
 }
 
-func handleMessages() {
+func handleBroadcast() {
 	for {
-		msg := <-broadcast
+		outMsg := <-broadcast
 
+		// 线程安全？
 		for client := range clientsPool {
-			if err := client.WriteJSON(msg); err != nil {
+			if err := client.WriteJSON(outMsg); err != nil {
 				log.Printf("send error: %v", err)
 				client.Close()
 				delete(clientsPool, client)
