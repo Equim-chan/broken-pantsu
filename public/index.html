@@ -1,33 +1,11 @@
 <!DOCTYPE html>
-<html>
+<html lang="en-US">
   <head>
     <title>Broken Pantsu</title>
     <style>
     </style>
     <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
     <script>
-      $(function () {
-        $('form').submit(function (e) {
-          e.preventDefault();
-
-          $.ajax({
-            type: 'POST',
-            url: '/access',
-            contentType: 'application/json; charset=utf-8',
-            /*
-            data: JSON.stringify({
-              likes: $('#likes').val()
-            }),
-            */
-            data: JSON.stringify({
-              likes: ['yuri', 'loli', 'schoolgirl', 'vanilla']
-            }),
-            success: function (data) {
-              document.location = '/chat';
-            }
-          });
-        });
-      });
     </script>
   </head>
   <body>

@@ -23,7 +23,7 @@ There are lots of things to do at the moment...
 * [ ] complete the UI
 * [x] add emoji support
 * [ ] check for XSS
-* [ ] separate HTML, CSS and JS
+* [x] separate HTML, CSS and JS
 * [ ] add browser-out-of-date warning
 * [ ] _add auto-reconnection after dc_
 
