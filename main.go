@@ -94,7 +94,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
+	locker.Lock()
 	clientsPool[ws] = true
+	locker.Unlock()
 
 	for {
 		var msg Message
