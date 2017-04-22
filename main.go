@@ -26,10 +26,10 @@ type OutBoundMessage struct {
 var (
 	locker      sync.Mutex
 	onlineUsers = 0
-	clientsPool = make(map[*websocket.Conn]bool)
+	clientsPool = make(map[*Client]bool) // true => not matched, false => matched
+	clientsMap  = make(map[*Client]*Client)
 	broadcast   = make(chan *OutBoundMessage, 10)
 	upgrader    = websocket.Upgrader{}
-	clientsMap  = make(map[*websocket.Conn]*websocket.Conn)
 )
 
 func main() {
@@ -50,7 +50,7 @@ func main() {
 	http.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "./public/chat.html")
 	})
-	http.HandleFunc("/access", access)
+	http.HandleFunc("/register", register)
 	http.HandleFunc("/love", handleConnections)
 
 	go handleBroadcast()
@@ -64,7 +64,7 @@ type applicantJSON struct {
 	Likes []string `json:"likes"`
 }
 
-func access(w http.ResponseWriter, r *http.Request) {
+func register(w http.ResponseWriter, r *http.Request) {
 	// TODO: 检查 cookie
 	decoder := json.NewDecoder(r.Body)
 	var t applicantJSON
@@ -76,7 +76,7 @@ func access(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// TODO: 检查标签的有效性(是否在预设的列表中)
-	// 然后将标签化为 int flag，保存到 redis
+	// 然后将标签化为 uint64 flag，保存到 redis
 	// 这里暂且用 map
 	log.Println(t.Likes)
 	// TODO: 返回成功 JSON
@@ -87,27 +87,66 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// TODO: 保证 map 等的操作
 	defer ws.Close()
+
+	// TODO: 保证 client 的合法性
+	client := &Client{}
+	client.Conn = ws
+	// TEST ONLY
+	client.Username = "Equim"
+	client.Likes = Yuri | Loli | Schoolgirl | Vanilla
+	// |||
 
 	locker.Lock()
 	onlineUsers++
-	clientsPool[ws] = true
+	clientsPool[client] = true
 	locker.Unlock()
 
 	broadcast <- &OutBoundMessage{"", "online users", strconv.Itoa(onlineUsers)}
 
-	// TODO: 下面的 for 之前进行匹配
+	// 确认池里有至少两个人
+	for {
+		if len(clientsPool) > 1 {
+			break
+		}
+	}
+
+	// 死锁可能性？
+	locker.Lock()
+	partner, ok := clientsMap[client]
+	if !ok {
+		var maxSim uint8 = 0
+		// TODO: 考虑更苛刻的条件，比如 maxSim < 3
+		for partner == nil {
+			for p, available := range clientsPool {
+				if !available || p == client {
+					continue
+				}
+				log.Println(client.SimilarityWith(p))
+				if sim := client.SimilarityWith(p); sim > maxSim {
+					partner = p
+					maxSim = sim
+				}
+			}
+		}
+		clientsPool[client], clientsPool[partner] = false, false
+		clientsMap[client], clientsMap[partner] = partner, client
+	}
+	locker.Unlock()
+
+	log.Println(clientsMap[client].Username)
 
 	for {
 		var inMsg InBoundMessage
 		if err := ws.ReadJSON(&inMsg); err != nil {
 			log.Printf("recv error: %v", err)
-			delete(clientsPool, ws)
+			delete(clientsPool, client)
 			break
 		}
 
 		outMsg := &OutBoundMessage{}
-		outMsg.Username = "Equim"
+		outMsg.Username = inMsg.Username
 
 		// TODO: 有没有 switch 的必要？
 		switch inMsg.Type {
@@ -120,8 +159,14 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			log.Println("typing:", inMsg.Message)
 		}
 
+		if err := partner.Conn.WriteJSON(outMsg); err != nil {
+			log.Printf("send error: %v", err)
+			partner.Conn.Close()
+			delete(clientsPool, partner)
+		}
+
 		// TODO: 这里超过缓存量的话会阻塞，考虑一下延迟的问题。如果对方大量 spam，或者甚至对方断线的情况
-		broadcast <- outMsg
+		// broadcast <- outMsg
 	}
 }
 
@@ -131,27 +176,11 @@ func handleBroadcast() {
 
 		// 线程安全？
 		for client := range clientsPool {
-			if err := client.WriteJSON(outMsg); err != nil {
+			if err := client.Conn.WriteJSON(outMsg); err != nil {
 				log.Printf("send error: %v", err)
-				client.Close()
+				client.Conn.Close()
 				delete(clientsPool, client)
 			}
 		}
 	}
 }
-
-/*
-func match() {
-	// Vanilla Yuri Yaoi Hentai Loli Shota Slice-of-Life Schoolgirl
-	// 1       2    4    8      16   32    64			 128
-	// 0x1     0x2  0x4  0x8    0x10 0x20  0x40			 0x80
-	randomGuy0 := 0x1 | 0x2 | 0x10 | 0x80
-	randomGuy1 := 0x2 | 0x4 | 0x8 | 0x10 | 0x20 | 0x80
-	and := randomGuy0 & randomGuy1
-	var similarity int
-	for similarity = 0; and > 0; similarity++ {
-		and &= (and - 1)
-	}
-	log.Printf("%d\n", similarity)
-}
-*/

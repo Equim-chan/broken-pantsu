@@ -4,7 +4,7 @@ $(function () {
 
     $.ajax({
       type: 'POST',
-      url: '/access',
+      url: '/register',
       contentType: 'application/json; charset=utf-8',
       /*
       data: JSON.stringify({

@@ -2,7 +2,7 @@ VERSION := ${shell date -u +%y%m%d}
 
 build:
 	go get -u github.com/gorilla/websocket
-	go build -ldflags "-X main.version=${VERSION}" main.go
+	go build -ldflags "-X main.version=${VERSION}" main.go client.go
 
 build-all:
 	go get -u github.com/gorilla/websocket

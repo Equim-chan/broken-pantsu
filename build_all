@@ -17,7 +17,7 @@ fi
 
 SOFTWARE="broken-pantsu"
 RELEASE="./release"
-SOURCE="main.go"
+SOURCE="main.go client.go"
 VERSION=`date -u +%y%m%d`
 LDFLAGS="-X main.VERSION=$VERSION -s -w"
 GCFLAGS=""
