@@ -68,7 +68,9 @@ func (c *Client) runSendQueue() {
 		if err := c.Conn.WriteJSON(outMsg); err != nil {
 			log.Printf("send error: %v", err)
 			c.Conn.Close()
+			locker.Lock()
 			delete(clientsPool, c)
+			locker.Unlock()
 		}
 	}
 }
@@ -90,7 +92,7 @@ func (c *Client) SimilarityWith(p *Client) uint8 {
 	return c.parseMask(c.likesMask & p.likesMask)
 }
 
-func (c *Client) ReceivePartner() {
+func (c *Client) AwaitPartner() {
 	c.Partner = <-c.PartnerReceiver
 }
 

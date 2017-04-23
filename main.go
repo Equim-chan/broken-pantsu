@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"path"
 	"strconv"
 	"sync"
 	"time"
@@ -27,16 +29,38 @@ type MatchedMessage struct {
 }
 
 var (
-	locker      sync.Mutex
-	onlineUsers = 0
-	clientsPool = make(map[*Client]bool) // true => not matched, false => matched
-	singleQueue = make(chan *Client, 100)
-	broadcast   = make(chan *OutBoundMessage, 10)
-	upgrader    = websocket.Upgrader{}
+	address      string
+	pubPath      string
+	maxQueueSize int
+
+	locker       sync.Mutex
+	onlineUsers  = 0
+	clientsPool  = make(map[*Client]bool) // true => not matched, false => matched
+	singleQueue  chan *Client
+	pendingQueue chan *Client
+	broadcast    = make(chan *OutBoundMessage, 10)
+	upgrader     = websocket.Upgrader{}
 )
 
+func init() {
+	ok := false
+	if address, ok = os.LookupEnv("BP_ADDR"); !ok {
+		address = "localhost:56833"
+	}
+	if pubPath, ok = os.LookupEnv("BP_PUB_PATH"); !ok {
+		pubPath = "./public"
+	}
+	if m, ok := os.LookupEnv("BP_MAX_QUEUE_SIZE"); ok {
+		maxQueueSize, _ = strconv.Atoi(m)
+	} else {
+		maxQueueSize = 20
+	}
+	singleQueue = make(chan *Client, maxQueueSize)
+	pendingQueue = make(chan *Client, maxQueueSize)
+}
+
 func main() {
-	http.Handle("/asset/", http.FileServer(http.Dir("./public")))
+	http.Handle("/asset/", http.FileServer(http.Dir(pubPath)))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		token, err := r.Cookie("token")
 		if err != nil {
@@ -48,10 +72,10 @@ func main() {
 			// TODO: 检查 token
 			log.Println(token)
 		}
-		http.ServeFile(w, r, "./public/index.html")
+		http.ServeFile(w, r, path.Join(pubPath, "/index.html"))
 	})
 	http.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./public/chat.html")
+		http.ServeFile(w, r, path.Join(pubPath, "chat.html"))
 	})
 	http.HandleFunc("/register", register)
 	http.HandleFunc("/loveStream", handleConnections)
@@ -59,9 +83,9 @@ func main() {
 	go handleBroadcast()
 	go findPartnerQueue()
 
-	log.Println("Serving at localhost:56833...")
-	log.Println("http://localhost:56833")
-	log.Fatal(http.ListenAndServe("localhost:56833", nil))
+	log.Println("Serving at", address)
+	log.Println("http://" + address)
+	log.Fatal(http.ListenAndServe(address, nil))
 }
 
 type applicantJSON struct {
@@ -118,7 +142,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	// 死锁可能性？
 	singleQueue <- client
-	client.ReceivePartner() // 会阻塞
+	client.AwaitPartner() // 这是个阻塞的方法
 
 	matched := &MatchedMessage{"matched", client.Partner.ToJsonStruct()}
 	client.SendQueue <- matched
@@ -127,7 +151,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		var inMsg InBoundMessage
 		if err := ws.ReadJSON(&inMsg); err != nil {
 			log.Printf("recv error: %v", err)
+			locker.Lock()
 			delete(clientsPool, client)
+			locker.Unlock()
 			break
 		}
 
@@ -163,7 +189,6 @@ func handleBroadcast() {
 }
 
 func findPartnerQueue() {
-	pendingQueue := make(chan *Client, 100)
 	for {
 		var p *Client = nil
 		var maxSim uint8 = 0
@@ -188,6 +213,12 @@ func findPartnerQueue() {
 				maxSim = 0
 			}
 			someSingle := <-singleQueue
+			locker.Lock()
+			_, ok := clientsPool[someSingle]
+			locker.Unlock()
+			if !ok {
+				continue
+			}
 			sim := c.SimilarityWith(someSingle)
 			// 匹配相似度最高的。如果遇到相似度相同的，则匹配对方喜好数最小的
 			if sim > maxSim || sim == maxSim && maxSim > 0 && someSingle.LikesCount() < p.LikesCount() {

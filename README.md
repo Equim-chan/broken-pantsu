@@ -26,8 +26,9 @@ There are lots of things to do at the moment...
 * [ ] add session support (in age of 3 hours)
 * [x] enforce matching algorithm
 * [ ] check for thread safety
-* [ ] setup travis CI
+* [x] setup travis CI
 * [ ] migrate build_all into Makefile
+* [ ] add test suite
 
 ### Frontend
 * [ ] complete the UI
