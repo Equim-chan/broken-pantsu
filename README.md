@@ -1,4 +1,6 @@
 # Broken Pantsu
+[![Travis](https://img.shields.io/travis/Equim-chan/broken-pantsu.svg)](https://travis-ci.org/Equim-chan/broken-pantsu)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Equim-chan/broken-pantsu)](https://goreportcard.com/report/github.com/Equim-chan/broken-pantsu)
 * Inspired by [fakku.dating](https://fakku.dating/)
 * Aimed to provide more stable connections between matched partners
 * Designed for high concurrency and performance
@@ -8,7 +10,7 @@
 ## Setup
 ```bash
 $ git clone git@github.com:Equim-chan/broken-pantsu.git
-$ make build
+$ make
 $ ./main
 ```
 

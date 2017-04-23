@@ -91,7 +91,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// TODO: defer 还要保证 map 等的操作
 	defer ws.Close()
 
 	// 获取来自客户端的第一条消息，即自己的资料
@@ -103,6 +102,12 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	client := NewClient(ws, &identity)
 	log.Println(client)
+	defer func() {
+		locker.Lock()
+		onlineUsers--
+		delete(clientsPool, client)
+		locker.Unlock()
+	}()
 
 	locker.Lock()
 	onlineUsers++
