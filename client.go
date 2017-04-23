@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/gorilla/websocket"
+	"log"
 )
 
 var (
@@ -18,8 +19,18 @@ type Identity struct {
 
 type Client struct {
 	*Identity
-	Conn      *websocket.Conn
-	likesMask uint64
+	Conn            *websocket.Conn
+	SendQueue       chan interface{}
+	Partner         *Client
+	PartnerReceiver chan *Client
+	likesMask       uint64
+}
+
+type ClientJSON struct {
+	Username string   `json:"username"`
+	Gender   bool     `json:"gender"`
+	Likes    []string `json:"likes"`
+	Timezone int8     `json:"Timezone"`
 }
 
 func NewClient(conn *websocket.Conn, identity *Identity) *Client {
@@ -43,7 +54,23 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 	}
 
 	identity.Likes = sanitizedLikes
-	return &Client{identity, conn, likesMask}
+	sendQueue := make(chan interface{}, 20)
+	ret := &Client{identity, conn, sendQueue, nil, make(chan *Client), likesMask}
+	go ret.runSendQueue()
+	return ret
+}
+
+// 保证不会出现并发写
+func (c *Client) runSendQueue() {
+	for {
+		outMsg := <-c.SendQueue
+
+		if err := c.Conn.WriteJSON(outMsg); err != nil {
+			log.Printf("send error: %v", err)
+			c.Conn.Close()
+			delete(clientsPool, c)
+		}
+	}
 }
 
 func (c *Client) parseMask(f uint64) uint8 {
@@ -61,4 +88,17 @@ func (c *Client) LikesCount() uint8 {
 
 func (c *Client) SimilarityWith(p *Client) uint8 {
 	return c.parseMask(c.likesMask & p.likesMask)
+}
+
+func (c *Client) ReceivePartner() {
+	c.Partner = <-c.PartnerReceiver
+}
+
+func (c *Client) ToJsonStruct() *ClientJSON {
+	return &ClientJSON{
+		c.Username,
+		c.Gender,
+		c.Likes,
+		c.Timezone,
+	}
 }

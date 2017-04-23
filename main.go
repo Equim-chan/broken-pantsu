@@ -21,23 +21,16 @@ type OutBoundMessage struct {
 	Message string `json:"message"`
 }
 
-type PartnerInfo struct {
-	Username string   `json:"username"`
-	Gender   bool     `json:"gender"`
-	Likes    []string `json:"likes"`
-	Timezone int8     `json:"Timezone"`
-}
-
 type MatchedMessage struct {
-	Type    string       `json:"type"`
-	Message *PartnerInfo `json:"partnerInfo"`
+	Type    string      `json:"type"`
+	Message *ClientJSON `json:"partnerInfo"`
 }
 
 var (
 	locker      sync.Mutex
 	onlineUsers = 0
 	clientsPool = make(map[*Client]bool) // true => not matched, false => matched
-	clientsMap  = make(map[*Client]*Client)
+	singleQueue = make(chan *Client, 100)
 	broadcast   = make(chan *OutBoundMessage, 10)
 	upgrader    = websocket.Upgrader{}
 )
@@ -63,7 +56,8 @@ func main() {
 	http.HandleFunc("/register", register)
 	http.HandleFunc("/loveStream", handleConnections)
 
-	//go handleBroadcast()
+	go handleBroadcast()
+	go findPartnerQueue()
 
 	log.Println("Serving at localhost:56833...")
 	log.Println("http://localhost:56833")
@@ -117,42 +111,12 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 
-	// 确保池里有至少两个人
-	for len(clientsPool) <= 1 {
-	}
-
 	// 死锁可能性？
-	locker.Lock()
-	partner, ok := clientsMap[client]
-	if !ok {
-		var maxSim uint8
-		// TODO: 考虑更苛刻的条件，比如 maxSim < 3
-		for partner == nil {
-			maxSim = 0
-			for p, available := range clientsPool {
-				if !available || p == client {
-					continue
-				}
-				sim := client.SimilarityWith(p)
-				// 匹配相似度最高的。如果遇到相似度相同的，则匹配对方喜好数最小的
-				if sim > maxSim || sim == maxSim && maxSim > 0 && p.LikesCount() < partner.LikesCount() {
-					partner = p
-					maxSim = sim
-				}
-			}
-		}
-		clientsPool[client], clientsPool[partner] = false, false
-		clientsMap[client], clientsMap[partner] = partner, client
-	}
-	locker.Unlock()
+	singleQueue <- client
+	client.ReceivePartner() // 会阻塞
 
-	matched := &MatchedMessage{"matched", &PartnerInfo{partner.Username, partner.Gender, partner.Likes, partner.Timezone}}
-
-	if err := client.Conn.WriteJSON(*matched); err != nil { // TODO: 全程 channel 来解决发送！
-		log.Printf("send error: %v", err)
-		client.Conn.Close()
-		delete(clientsPool, client)
-	}
+	matched := &MatchedMessage{"matched", client.Partner.ToJsonStruct()}
+	client.SendQueue <- matched
 
 	for {
 		var inMsg InBoundMessage
@@ -174,11 +138,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			outMsg.Message = inMsg.Message
 		}
 
-		if err := partner.Conn.WriteJSON(outMsg); err != nil {
-			log.Printf("send error: %v", err)
-			partner.Conn.Close()
-			delete(clientsPool, partner)
-		}
+		client.Partner.SendQueue <- outMsg
 
 		// TODO: 这里超过缓存量的话会阻塞，考虑一下延迟的问题。如果对方大量 spam，或者甚至对方断线的情况
 		// broadcast <- outMsg
@@ -188,14 +148,55 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 func handleBroadcast() {
 	for {
 		outMsg := <-broadcast
-
 		// 线程安全？
+		locker.Lock()
 		for client := range clientsPool {
-			if err := client.Conn.WriteJSON(outMsg); err != nil {
-				log.Printf("send error: %v", err)
-				client.Conn.Close()
-				delete(clientsPool, client)
-			}
+			client.SendQueue <- outMsg
 		}
+		locker.Unlock()
+	}
+}
+
+func findPartnerQueue() {
+	pendingQueue := make(chan *Client, 100)
+	for {
+		var p *Client = nil
+		var maxSim uint8 = 0
+		// TODO: 考虑更苛刻的条件，比如 maxSim < 3
+		c := <-singleQueue // c主动，p被动
+		for len(singleQueue) <= 0 {
+		}
+		for {
+			if len(singleQueue) <= 0 {
+				for i := 0; i < len(pendingQueue); i++ { // 这里不能用 range！
+					v := <-pendingQueue
+					if p != v { // p可能为nil，也可能为匹配到的人
+						singleQueue <- v
+					}
+				}
+				if p != nil {
+					log.Println("MATCHED")
+					break
+				}
+				log.Println("P IS NIL")
+				c = <-singleQueue
+				maxSim = 0
+			}
+			someSingle := <-singleQueue
+			sim := c.SimilarityWith(someSingle)
+			// 匹配相似度最高的。如果遇到相似度相同的，则匹配对方喜好数最小的
+			if sim > maxSim || sim == maxSim && maxSim > 0 && someSingle.LikesCount() < p.LikesCount() {
+				p = someSingle
+				maxSim = sim
+			}
+			pendingQueue <- someSingle
+		}
+
+		c.PartnerReceiver <- p
+		p.PartnerReceiver <- c
+
+		locker.Lock()
+		clientsPool[c], clientsPool[p] = false, false
+		locker.Unlock()
 	}
 }

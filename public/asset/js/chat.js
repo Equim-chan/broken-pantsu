@@ -52,10 +52,7 @@ $(function () {
           console.log('online:', data.message);
           break;
         case 'matched':
-          console.log(data.partnerInfo.username);
-          console.log(data.partnerInfo.gender ? 'female' : 'male');
-          console.log(data.partnerInfo.timezone);
-          console.log(data.partnerInfo.likes);
+          console.log(data.partnerInfo);
           break;
         case 'reject':
           alert(data.message);
