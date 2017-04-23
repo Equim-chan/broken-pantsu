@@ -21,6 +21,18 @@ type OutBoundMessage struct {
 	Message string `json:"message"`
 }
 
+type PartnerInfo struct {
+	Username string   `json:"username"`
+	Gender   bool     `json:"gender"`
+	Likes    []string `json:"likes"`
+	Timezone int8     `json:"Timezone"`
+}
+
+type MatchedMessage struct {
+	Type    string       `json:"type"`
+	Message *PartnerInfo `json:"partnerInfo"`
+}
+
 var (
 	locker      sync.Mutex
 	onlineUsers = 0
@@ -51,7 +63,7 @@ func main() {
 	http.HandleFunc("/register", register)
 	http.HandleFunc("/loveStream", handleConnections)
 
-	go handleBroadcast()
+	//go handleBroadcast()
 
 	log.Println("Serving at localhost:56833...")
 	log.Println("http://localhost:56833")
@@ -133,6 +145,14 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		clientsMap[client], clientsMap[partner] = partner, client
 	}
 	locker.Unlock()
+
+	matched := &MatchedMessage{"matched", &PartnerInfo{partner.Username, partner.Gender, partner.Likes, partner.Timezone}}
+
+	if err := client.Conn.WriteJSON(*matched); err != nil { // TODO: 全程 channel 来解决发送！
+		log.Printf("send error: %v", err)
+		client.Conn.Close()
+		delete(clientsPool, client)
+	}
 
 	for {
 		var inMsg InBoundMessage

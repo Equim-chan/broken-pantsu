@@ -8,7 +8,7 @@ $(function () {
     ws.send(JSON.stringify({
       username: 'Equim',
       gender: false,
-      likes: ['Yuri', 'Loli', 'Schoolgirl', 'Vanilla'],   // 大小写敏感
+      likes: ['Identity', 'Yuri', 'identity', 'Loli', 'Schoolgirl', 'Vanilla', 'Loli', 'shit'],   // 大小写敏感
       timezone: 8
       //token:
     }));
@@ -41,6 +41,7 @@ $(function () {
     });
 
     ws.onmessage = function (e) {
+      console.log(e.data);
       var data = JSON.parse(e.data);
       switch (data.type) {
         case 'chat':
@@ -49,6 +50,12 @@ $(function () {
           break;
         case 'online users':
           console.log('online:', data.message);
+          break;
+        case 'matched':
+          console.log(data.partnerInfo.username);
+          console.log(data.partnerInfo.gender ? 'female' : 'male');
+          console.log(data.partnerInfo.timezone);
+          console.log(data.partnerInfo.likes);
           break;
         case 'reject':
           alert(data.message);
