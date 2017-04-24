@@ -4,7 +4,7 @@
 * Inspired by [fakku.dating](https://fakku.dating/)
 * Aimed to provide more stable connections between matched partners
 * Designed for high concurrency and performance
-* Go, instead of Node.js; raw WebSocket, instead of socket.io
+* Raw WebSocket, instead of socket.io
 * __Love, better than sorry__
 
 ## Setup

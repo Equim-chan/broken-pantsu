@@ -1,3 +1,37 @@
+var util = (function(){
+  var _util = {};
+
+  var entityMap = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+    '/': '&#x2F;',
+    '`': '&#x60;',
+    '=': '&#x3D;'
+  };
+
+  _util.escapeHtml = function (string) {
+    return String(string).replace(/[&<>"'`=\/]/g, function (s) {
+      return util.entityMap[s];
+    });
+  };
+
+  _util.readCookie = function (name) {
+      var nameEQ = name + "=";
+      var ca = document.cookie.split(';');
+      for(var i = 0; i < ca.length; i++) {
+          var c = ca[i];
+          while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+          if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+      }
+      return null;
+  };
+
+  return _util;
+})();
+
 $(function () {
   var wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/loveStream';
   var ws = new WebSocket(wsUrl);
@@ -9,8 +43,8 @@ $(function () {
       username: 'Equim',
       gender: false,
       likes: ['Identity', 'Yuri', 'identity', 'Loli', 'Schoolgirl', 'Vanilla', 'Loli', 'shit'],   // 大小写敏感
-      timezone: 8
-      //token:
+      timezone: 8,
+      token: util.readCookie('token')
     }));
 
     $('form').submit(function () {

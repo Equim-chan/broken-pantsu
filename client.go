@@ -14,7 +14,7 @@ type Identity struct {
 	Gender   bool     `json:"gender"` // true => female, false => male
 	Likes    []string `json:"likes"`
 	Timezone int8     `json:"timezone"`
-	// Token string
+	Token    string   `json:"token"`
 }
 
 type Client struct {
@@ -31,6 +31,7 @@ type ClientJSON struct {
 	Gender   bool     `json:"gender"`
 	Likes    []string `json:"likes"`
 	Timezone int8     `json:"Timezone"`
+	// Token is private
 }
 
 func NewClient(conn *websocket.Conn, identity *Identity) *Client {
