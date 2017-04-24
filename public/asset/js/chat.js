@@ -1,3 +1,22 @@
+(function (func) {
+  var oldonload = window.onload;
+  if (typeof window.onload != 'function') {
+    window.onload = func;
+  } else {
+    window.onload = function() {
+      if (oldonload) {
+        oldonload();
+      }
+      func();
+    }
+  }
+})(function(){
+  if (!window.WebSocket) {
+    alert('Sorry, your browser is too old to run Broken Pantsu!\nPlease use a morden browser that supports WebSocket.');
+    location.href = 'http://outdatedbrowser.com'
+  }
+});
+
 var util = (function(){
   var _util = {};
 
@@ -19,14 +38,14 @@ var util = (function(){
   };
 
   _util.readCookie = function (name) {
-      var nameEQ = name + "=";
-      var ca = document.cookie.split(';');
-      for(var i = 0; i < ca.length; i++) {
-          var c = ca[i];
-          while (c.charAt(0) == ' ') c = c.substring(1, c.length);
-          if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
-      }
-      return null;
+    var nameEQ = name + "=";
+    var ca = document.cookie.split(';');
+    for(var i = 0; i < ca.length; i++) {
+      var c = ca[i];
+      while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+      if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+    }
+    return null;
   };
 
   return _util;
