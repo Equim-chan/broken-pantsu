@@ -10,7 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-redis/redis"
 	"github.com/gorilla/websocket"
+	"github.com/satori/go.uuid"
 )
 
 type InBoundMessage struct {
@@ -29,9 +31,11 @@ type MatchedNotify struct {
 }
 
 var (
-	address      string
-	pubPath      string
-	maxQueueSize int
+	address     string
+	pubPath     string
+	maxQueueLen int
+
+	redisClient *redis.Client
 
 	locker      sync.Mutex
 	onlineUsers = 0
@@ -43,18 +47,30 @@ var (
 
 func init() {
 	ok := false
+
 	if address, ok = os.LookupEnv("BP_ADDR"); !ok {
 		address = "localhost:56833"
 	}
+
 	if pubPath, ok = os.LookupEnv("BP_PUB_PATH"); !ok {
 		pubPath = "./public"
 	}
-	if m, ok := os.LookupEnv("BP_MAX_QUEUE_SIZE"); ok {
-		maxQueueSize, _ = strconv.Atoi(m)
+
+	if m, ok := os.LookupEnv("BP_MAX_QUEUE_LEN"); ok {
+		maxQueueLen, _ = strconv.Atoi(m)
 	} else {
-		maxQueueSize = 20
+		maxQueueLen = 20
 	}
-	singleQueue = make(chan *Client, maxQueueSize)
+	singleQueue = make(chan *Client, maxQueueLen)
+
+	redisClient = redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
+	if err := redisClient.Ping().Err(); err != nil {
+		log.Fatalln("REDIS SETUP ERROR:", err)
+	}
 }
 
 func main() {
@@ -62,12 +78,18 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		token, err := r.Cookie("token")
 		if err != nil {
-			exp := time.Now().Add(time.Minute * 2)
-			// TODO: 随机化 Token，加入查重检查等
-			tokenCookie := &http.Cookie{Name: "token", Value: "PENDING TO HAVE A HASH HERE", Expires: exp}
+			token := uuid.NewV4().String()
+			log.Println(token)
+			exp := time.Minute * 2
+			expStamp := time.Now().Add(exp)
+			if err = redisClient.Set(token, "", exp).Err(); err != nil {
+				log.Println("REDIS ERROR:", err)
+				// ...
+			}
+
+			tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: expStamp}
 			http.SetCookie(w, tokenCookie)
 		} else {
-			// TODO: 检查 token
 			log.Println(token)
 		}
 		http.ServeFile(w, r, path.Join(pubPath, "/index.html"))
@@ -144,6 +166,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	singleQueue <- client
 	client.AwaitPartner() // 这是个阻塞的方法
 	defer func() {
+		// 要在这里，大做文章
+		// 目前只是我方掉线之后对方重新回到单身队列
+		// 但是我们的目标可不是这个！
 		partner := client.Partner
 		locker.Lock()
 		_, ok := clientsPool[partner]

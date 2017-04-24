@@ -9,17 +9,17 @@
 
 ## Setup
 ```bash
-$ git clone git@github.com:Equim-chan/broken-pantsu.git
-$ make
-$ ./main
+$ go get -u github.com/Equim-chan/broken-pantsu
 ```
 Config can be passed via environment. Example:
 ```bash
-$ BP_ADDR=:5543 BP_PUB_PATH=../dist BP_MAX_QUEUE_SIZE=100 ./main
+$ BP_ADDR=:5543 BP_PUB_PATH=../dist BP_MAX_QUEUE_LEN=100 ./broken-pantsu
 ```
 
 ## Dependencies
 * [github.com/gorilla/websocket](https://github.com/gorilla/websocket)
+* [github.com/satori/go.uuid](https://github.com/satori/go.uuid)
+* [github.com/go-redis/redis](https://github.com/go-redis/redis)
 
 ## TODO
 There are lots of things to do at the moment...
