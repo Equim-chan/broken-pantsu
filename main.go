@@ -33,13 +33,12 @@ var (
 	pubPath      string
 	maxQueueSize int
 
-	locker       sync.Mutex
-	onlineUsers  = 0
-	clientsPool  = make(map[*Client]bool) // true => not matched, false => matched
-	singleQueue  chan *Client
-	pendingQueue chan *Client
-	broadcast    = make(chan *OutBoundMessage, 10)
-	upgrader     = websocket.Upgrader{}
+	locker      sync.Mutex
+	onlineUsers = 0
+	clientsPool = make(map[*Client]bool) // true => not matched, false => matched
+	singleQueue chan *Client
+	broadcast   = make(chan *OutBoundMessage, 10)
+	upgrader    = websocket.Upgrader{}
 )
 
 func init() {
@@ -56,7 +55,6 @@ func init() {
 		maxQueueSize = 20
 	}
 	singleQueue = make(chan *Client, maxQueueSize)
-	pendingQueue = make(chan *Client, maxQueueSize)
 }
 
 func main() {
@@ -189,29 +187,13 @@ func handleBroadcast() {
 }
 
 func findPartnerQueue() {
+	bufferQueue := []*Client{}
 	for {
 		var p *Client = nil
 		var maxSim uint8 = 0
 		// TODO: 考虑更苛刻的条件，比如 maxSim < 3
 		c := <-singleQueue // c主动，p被动
-		for len(singleQueue) <= 0 {
-		}
 		for {
-			if len(singleQueue) <= 0 {
-				for i := 0; i < len(pendingQueue); i++ { // 这里不能用 range！
-					v := <-pendingQueue
-					if p != v { // p可能为nil，也可能为匹配到的人
-						singleQueue <- v
-					}
-				}
-				if p != nil {
-					log.Println("MATCHED")
-					break
-				}
-				log.Println("P IS NIL")
-				c = <-singleQueue
-				maxSim = 0
-			}
 			someSingle := <-singleQueue
 			locker.Lock()
 			_, ok := clientsPool[someSingle]
@@ -225,7 +207,25 @@ func findPartnerQueue() {
 				p = someSingle
 				maxSim = sim
 			}
-			pendingQueue <- someSingle
+			bufferQueue = append(bufferQueue, someSingle)
+
+			if len(singleQueue) <= 0 {
+				// 把 buffer 给 dump 出来
+				for _, v := range bufferQueue {
+					// p可能为nil，也可能为匹配到的人
+					if p != v {
+						singleQueue <- v
+					}
+				}
+				bufferQueue = nil
+				if p != nil {
+					log.Println("MATCHED")
+					break
+				}
+				log.Println("P IS NIL")
+				c = <-singleQueue
+				maxSim = 0
+			}
 		}
 
 		c.PartnerReceiver <- p

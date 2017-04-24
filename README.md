@@ -13,6 +13,10 @@ $ git clone git@github.com:Equim-chan/broken-pantsu.git
 $ make
 $ ./main
 ```
+Config can be passed via environment. Example:
+```bash
+$ BP_ADDR=:5543 BP_PUB_PATH=../dist BP_MAX_QUEUE_SIZE=100 ./main
+```
 
 ## Dependencies
 * [github.com/gorilla/websocket](https://github.com/gorilla/websocket)
