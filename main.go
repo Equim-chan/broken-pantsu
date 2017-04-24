@@ -23,7 +23,7 @@ type OutBoundMessage struct {
 	Message string `json:"message"`
 }
 
-type MatchedMessage struct {
+type MatchedNotify struct {
 	Type    string      `json:"type"`
 	Message *ClientJSON `json:"partnerInfo"`
 }
@@ -122,28 +122,48 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 根据客户端身份定义 client 对象
 	client := NewClient(ws, &identity)
 	log.Println(client)
+	locker.Lock()
+	onlineUsers++
+	clientsPool[client] = true
+	locker.Unlock()
 	defer func() {
 		locker.Lock()
 		onlineUsers--
 		delete(clientsPool, client)
 		locker.Unlock()
+		broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 	}()
-
-	locker.Lock()
-	onlineUsers++
-	clientsPool[client] = true
-	locker.Unlock()
 
 	broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 
+	// 配对
 	// 死锁可能性？
 	singleQueue <- client
 	client.AwaitPartner() // 这是个阻塞的方法
+	defer func() {
+		partner := client.Partner
+		locker.Lock()
+		_, ok := clientsPool[partner]
+		locker.Unlock()
+		if !ok {
+			return
+		}
+		partner.Partner = nil
+		locker.Lock()
+		clientsPool[partner] = true
+		locker.Unlock()
+		singleQueue <- partner
+		// 因为下面的 Await 会阻塞，所以这里要异步进行
+		go func() {
+			partner.AwaitPartner()
+			partner.SendQueue <- &MatchedNotify{"matched", partner.Partner.ToJsonStruct()}
+		}()
+	}()
 
-	matched := &MatchedMessage{"matched", client.Partner.ToJsonStruct()}
-	client.SendQueue <- matched
+	client.SendQueue <- &MatchedNotify{"matched", client.Partner.ToJsonStruct()}
 
 	for {
 		var inMsg InBoundMessage
@@ -168,16 +188,13 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		}
 
 		client.Partner.SendQueue <- outMsg
-
-		// TODO: 这里超过缓存量的话会阻塞，考虑一下延迟的问题。如果对方大量 spam，或者甚至对方断线的情况
-		// broadcast <- outMsg
 	}
 }
 
 func handleBroadcast() {
 	for {
 		outMsg := <-broadcast
-		// 线程安全？
+
 		locker.Lock()
 		for client := range clientsPool {
 			client.SendQueue <- outMsg
@@ -196,11 +213,18 @@ func findPartnerQueue() {
 		for {
 			someSingle := <-singleQueue
 			locker.Lock()
-			_, ok := clientsPool[someSingle]
+			_, ok0 := clientsPool[c]
+			_, ok1 := clientsPool[someSingle]
 			locker.Unlock()
-			if !ok {
+			if !ok0 {
+				singleQueue <- someSingle
+				c = <-singleQueue
 				continue
 			}
+			if !ok1 {
+				continue
+			}
+			// TODO: 避免在极端情况下出现自己和自己匹配上的情况(利用token确认)
 			sim := c.SimilarityWith(someSingle)
 			// 匹配相似度最高的。如果遇到相似度相同的，则匹配对方喜好数最小的
 			if sim > maxSim || sim == maxSim && maxSim > 0 && someSingle.LikesCount() < p.LikesCount() {
