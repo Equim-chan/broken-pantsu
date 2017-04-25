@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/sh
 sum="sha1sum"
 
 if ! hash sha1sum 2>/dev/null; then
@@ -17,7 +17,7 @@ fi
 
 SOFTWARE="broken-pantsu"
 RELEASE="./release"
-SOURCE="main.go client.go"
+SOURCE="main.go client.go util.go"
 VERSION=`date -u +%y%m%d`
 LDFLAGS="-X main.VERSION=$VERSION -s -w"
 GCFLAGS=""

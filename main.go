@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -57,6 +57,7 @@ func init() {
 	if pubPath, ok = os.LookupEnv("BP_PUB_PATH"); !ok {
 		pubPath = "./public"
 	}
+	pubPath, _ = filepath.Abs(pubPath)
 
 	if m, ok := os.LookupEnv("BP_MAX_QUEUE_LEN"); ok {
 		maxQueueLen, _ = strconv.Atoi(m)
@@ -79,7 +80,7 @@ func main() {
 	http.HandleFunc("/", tokenDist)
 	http.HandleFunc("/register", register)
 	http.HandleFunc("/loveStream", handleConnections)
-	http.Handle("/chat", http.FileServer(http.Dir(pubPath)))
+	http.HandleFunc("/chat", serveFile(filepath.Join(pubPath, "/chat.html")))
 	http.Handle("/asset/", http.FileServer(http.Dir(pubPath)))
 
 	go handleBroadcast()
@@ -95,20 +96,17 @@ type applicantJSON struct {
 }
 
 func tokenDist(w http.ResponseWriter, r *http.Request) {
-	token, err := r.Cookie("token")
-	if err != nil {
+	if _, err := r.Cookie("token"); err != nil {
 		token := uuid.NewV4().String()
-		exp := time.Minute * 2
+		exp := time.Second * 20
 		expStamp := time.Now().Add(exp)
 
 		tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: expStamp}
 		http.SetCookie(w, tokenCookie)
-	} else {
-		// TODO: 从 redis 验证 token
-		log.Println("ALREADY HAS TOKEN:", token)
+		log.Println("HANDOUT THE TOKEN:", token)
 	}
 
-	http.ServeFile(w, r, path.Join(pubPath, "/index.html"))
+	http.ServeFile(w, r, filepath.Join(pubPath, "/index.html"))
 }
 
 // 准备 deprecate 这个方法了
@@ -126,7 +124,7 @@ func register(w http.ResponseWriter, r *http.Request) {
 	// TODO: 检查标签的有效性(是否在预设的列表中)
 	// 然后将标签化为 uint64 flag，保存到 redis
 	// 这里暂且用 map
-	log.Println(t.Likes)
+	//log.Println(t.Likes)
 	// TODO: 返回成功 JSON
 }
 
@@ -146,10 +144,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	// 根据客户端身份定义 client 对象
 	client := NewClient(ws, &identity)
-	if err := redisClient.Set(identity.Token, true, time.Second*10).Err(); err != nil {
-		log.Println("REDIS ERROR:", err)
-		// ...
-	}
 	locker.Lock()
 	onlineUsers++
 	clientsPool[client] = true
@@ -165,22 +159,30 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 
 	// 匹配
-	// 死锁可能性？
-	singleQueue <- client
-	client.AwaitPartner() // 这是个阻塞的方法
+	if prevMatcherToken, err := redisClient.Get(client.Token).Result(); prevMatcherToken != "" && err != nil {
+		// 如果此人是原配
+		log.Println("FOUND PREV MATCHER", prevMatcherToken)
+	} else {
+		// 如果此人是新来的
+		// 死锁可能性？
+		singleQueue <- client
+		client.AwaitPartner() // 这是个阻塞的方法
+		client.SendQueue <- &MatchedNotify{"matched", client.Partner.ToJsonStruct()}
+	}
 	defer func() {
 		// 要在这里，大做文章
 		// 目前只是我方掉线之后对方重新回到单身队列
 		// 但是我们的目标可不是这个！
 		//
 		// 我们把对方被动掉线后己方的状态称为失恋状态
+		// 掉线的一方称为原配
 		//
 		// TODO:
 		// * 区分主动下线与被动掉线
 		//
 		// 工作流:
 		// * 向掉线的人的 Partner 发送对方被动掉线的消息
-		// * partner 陷入等待状态，有几种情况
+		// * partner 进入失恋队列，陷入等待状态，有几种情况
 		//   * partner 主动下线 -> 直接销毁匹配
 		//   * partner 被动掉线 -> 保留匹配，当一方上线时直接进入失恋状态
 		//   * 有新 client 的 Token 为刚刚掉线的人的 Token -> 直接匹配
@@ -202,8 +204,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			partner.SendQueue <- &MatchedNotify{"matched", partner.Partner.ToJsonStruct()}
 		}()
 	}()
-
-	client.SendQueue <- &MatchedNotify{"matched", client.Partner.ToJsonStruct()}
 
 	for {
 		var inMsg InBoundMessage
@@ -298,5 +298,14 @@ func matchingBus() {
 		locker.Lock()
 		clientsPool[c], clientsPool[p] = false, false
 		locker.Unlock()
+
+		multi := redisClient.Pipeline()
+		multi.Set(c.Token, p.Token, time.Minute)
+		multi.Set(p.Token, c.Token, time.Minute)
+		if _, err := multi.Exec(); err != nil {
+			log.Println("REDIS ERROR:", err)
+			// ...
+		}
+		log.Println("SET IN REDIS:", c.Token, "<->", p.Token)
 	}
 }
