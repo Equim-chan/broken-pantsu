@@ -5,6 +5,7 @@ go:
   - 1.8
 install:
   - make love
+  - make all
 script:
   - diff -u <(echo -n) <(gofmt -d .)
   - go vet $(go list ./... | grep -v /vendor/)

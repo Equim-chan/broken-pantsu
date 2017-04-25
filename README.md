@@ -5,7 +5,7 @@
 * Aimed to provide more stable connections between matched partners
 * Designed for high concurrency and performance
 * Raw WebSocket, instead of socket.io
-* __Love, better than sorry__
+* __Love, rather than sorry__
 
 ## Setup
 ```bash
@@ -14,8 +14,12 @@ $ go get -u github.com/Equim-chan/broken-pantsu
 or manually
 ```bash
 $ git clone git@github.com:Equim-chan/broken-pantsu.git
-$ make love       # "love, better than sorry" after all
+$ make love       # "love, rather than sorry" after all
 $ ./broken-pantsu
+```
+Build executable files for all platforms and archs
+```bash
+$ make all
 ```
 Config can be passed via environment. Example:
 ```bash
@@ -37,7 +41,7 @@ There are lots of things to do at the moment...
 * [x] enforce matching algorithm
 * [ ] check for thread safety
 * [x] setup travis CI
-* [ ] migrate build_all into Makefile
+* [x] migrate build_all into Makefile
 * [ ] add test suite
 
 ### Frontend
