@@ -1,8 +1,8 @@
 SOFTWARE := broken-pantsu
 SOURCE := main.go client.go util.go
 
-RELEASE := "$(shell realpath ./release)"
-BUILD_TMP := "$(shell realpath ./tmp)"
+RELEASE := "$(shell readlink -f ./release)"
+BUILD_TMP := "$(shell readlink -f ./tmp)"
 PWD := "$(shell pwd)"
 VERSION := $(shell date -u +%y%m%d)
 LDFLAGS := "-X main.VERSION=$(VERSION) -s -w"
@@ -18,6 +18,7 @@ love: install-dep
 		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
 		-x \
 		-o $(SOFTWARE) $(SOURCE)
+	$(SUM) $(SOFTWARE)
 
 all: all-build \
 	clean-tmp \
