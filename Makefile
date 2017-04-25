@@ -1,5 +1,4 @@
 SOFTWARE := broken-pantsu
-SOURCE := main.go client.go util.go
 
 RELEASE := "$(shell readlink -f ./release)"
 BUILD_TMP := "$(shell readlink -f ./tmp)"
@@ -17,7 +16,7 @@ love: install-dep
 	env CGO_ENABLED=0 \
 		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
 		-x \
-		-o $(SOFTWARE) $(SOURCE)
+		-o $(SOFTWARE)
 	$(SUM) $(SOFTWARE)
 
 all: all-build \
@@ -38,11 +37,11 @@ all-build: install-dep
 				GOOS=$$os GOARCH=$$arch \
 				go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
 				-x \
-				-o $(BUILD_TMP)/$(SOFTWARE)_$${os}_$${arch}$${suffix} $(SOURCE); \
+				-o $(BUILD_TMP)/$(SOFTWARE)_$${os}_$${arch}$${suffix} ; \
 			cd $(BUILD_TMP) ; \
 			tar -zcf \
 				$(RELEASE)/$(SOFTWARE)-$${os}-$${arch}-$(VERSION).tar.gz \
-				$(SOFTWARE)_$${os}_$${arch}$${suffix}; \
+				$(SOFTWARE)_$${os}_$${arch}$${suffix} ; \
 			cd $(PWD) ; \
 		done ; \
 	done ; \
@@ -52,7 +51,7 @@ all-build: install-dep
 		GOOS=linux GOARCH=arm GOARM=$${v} \
 		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
 		-x \
-		-o $(BUILD_TMP)/$(SOFTWARE)_linux_arm$${v} $(SOURCE) ; \
+		-o $(BUILD_TMP)/$(SOFTWARE)_linux_arm$${v} ; \
 	done ; \
 	if hash upx 2>/dev/null; then \
 		upx -9 $(SOFTWARE)_linux_arm* ; \
@@ -67,12 +66,12 @@ all-build: install-dep
 		GOOS=linux GOARCH=mipsle \
 		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
 		-x \
-		-o $(BUILD_TMP)/$(SOFTWARE)_linux_mipsle $(SOURCE); \
+		-o $(BUILD_TMP)/$(SOFTWARE)_linux_mipsle; \
 	env CGO_ENABLED=0 \
 		GOOS=linux GOARCH=mipsle \
 		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
 		-x \
-		-o $(BUILD_TMP)/$(SOFTWARE)_linux_mips $(SOURCE); \
+		-o $(BUILD_TMP)/$(SOFTWARE)_linux_mips; \
 	if hash upx 2>/dev/null; then \
 		upx -9 ${SOFTWARE}_linux_mips* ; \
 	fi ; \
@@ -89,9 +88,7 @@ all-chksum:
 	cd $(RELEASE); $(SUM) *
 
 install-dep:
-	go get -u github.com/gorilla/websocket
-	go get -u github.com/satori/go.uuid
-	go get -u github.com/go-redis/redis
+	glide install
 
 clean-tmp:
 	rm -rf $(BUILD_TMP)

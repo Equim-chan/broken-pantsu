@@ -1,0 +1,5 @@
+package: .
+import:
+- package: github.com/go-redis/redis
+- package: github.com/gorilla/websocket
+- package: github.com/satori/go.uuid

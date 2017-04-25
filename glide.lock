@@ -1,0 +1,16 @@
+hash: b16c55359bc5abf2fe0bf1951a31ae2a5882ec1067ff82706ba7541dce189d4a
+updated: 2017-04-25T21:32:46.2430405+08:00
+imports:
+- name: github.com/go-redis/redis
+  version: d0dd05b65910c3c658378f2ddd17cc96df56b17d
+  subpackages:
+  - internal
+  - internal/consistenthash
+  - internal/hashtag
+  - internal/pool
+  - internal/proto
+- name: github.com/gorilla/websocket
+  version: a91eba7f97777409bc2c443f5534d41dd20c5720
+- name: github.com/satori/go.uuid
+  version: 5bf94b69c6b68ee1b541973bb8e1144db23a194b
+testImports: []

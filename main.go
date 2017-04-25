@@ -141,7 +141,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	// 获取来自客户端的第一条消息，即自己的资料
 	var identity Identity
 	if err := ws.ReadJSON(&identity); err != nil || !identity.IsValid() {
-		ws.WriteJSON(&OutBoundMessage{"reject", "malformed request."})
+		ws.WriteJSON(&OutBoundMessage{"reject", "Malformed request."})
 		return
 	}
 
@@ -205,11 +205,12 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		locker.Unlock()
 		//singleQueue <- partner
 		lovelornQueue <- partner
-		log.Println("WE HAVE A LOVELORN HERE NOW")
+		log.Println("WE HAVE A NEW LOVELORN HERE NOW, HIS TOKEN:", partner.Token)
 		// 因为下面的 Await 会阻塞，所以这里要异步进行
 		go func() {
 			partner.AwaitPartner()
-			partner.SendQueue <- &MatchedNotify{"matched", partner.Partner.ToJsonStruct()}
+			//partner.SendQueue <- &MatchedNotify{"matched", partner.Partner.ToJsonStruct()}
+			partner.SendQueue <- &MatchedNotify{"reunion", partner.Partner.ToJsonStruct()}
 		}()
 	}()
 
@@ -291,7 +292,7 @@ func matchingBus() {
 				}
 				bufferQueue = nil
 				if p != nil {
-					log.Println("MATCHED")
+					log.Println("MATCHED:", c.Token, p.Token)
 					break
 				}
 				log.Println("P IS NIL")
@@ -308,8 +309,8 @@ func matchingBus() {
 		locker.Unlock()
 
 		multi := redisClient.Pipeline()
-		multi.Set(c.Token, p.Token, time.Minute)
-		multi.Set(p.Token, c.Token, time.Minute)
+		multi.Set(c.Token, p.Token, time.Minute*2)
+		multi.Set(p.Token, c.Token, time.Minute*2)
 		if _, err := multi.Exec(); err != nil {
 			log.Println("REDIS ERROR:", err)
 			// ...
@@ -372,8 +373,8 @@ func reunionBus() {
 		locker.Unlock()
 
 		multi := redisClient.Pipeline()
-		multi.Set(c.Token, p.Token, time.Minute)
-		multi.Set(p.Token, c.Token, time.Minute)
+		multi.Set(c.Token, p.Token, time.Minute*2)
+		multi.Set(p.Token, c.Token, time.Minute*2)
 		if _, err := multi.Exec(); err != nil {
 			log.Println("REDIS ERROR:", err)
 			// ...

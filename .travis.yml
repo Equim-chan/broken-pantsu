@@ -4,8 +4,8 @@ go:
   - 1.7
   - 1.8
 install:
+  - go get -v github.com/Masterminds/glide
   - make love
-  - make all
 script:
   - diff -u <(echo -n) <(gofmt -d .)
   - go vet $(go list ./... | grep -v /vendor/)
