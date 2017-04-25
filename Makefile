@@ -12,31 +12,55 @@ ARCHS := amd64 386
 ARMS := 5 6 7
 SUM := sha1sum
 
-love: install-dep
-	env CGO_ENABLED=0 \
-		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-		-x \
+SHELL := /bin/bash
+VERBOSE := true
+
+love: setup-tmp \
+	install-dep \
+	gopath-spoof \
+	build
+
+	make clean-tmp
+
+release: setup-tmp \
+	setup-release \
+	install-dep \
+	gopath-spoof \
+	build-linux-darwin-windows-freebsd \
+	build-arms \
+	build-mipsle
+
+	make clean-tmp
+	make release-chksum
+
+build:
+	@GOPATH=$(BUILD_TMP) ; \
+	CGO_ENABLED=0 ; \
+	if [ "$(VERBOSE)" == true ]; then \
+		V_ARG="-x" ; \
+	fi ; \
+	go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
+		$$V_ARG \
 		-o $(SOFTWARE)
-	$(SUM) $(SOFTWARE)
 
-all: all-build \
-	clean-tmp \
-	all-chksum
+setup-release:
+	mkdir -p $(RELEASE)
 
-all-build: install-dep
-	@mkdir -p $(RELEASE) ; \
-	mkdir -p $(BUILD_TMP) ; \
-	# General
-	@for os in $(OSES); do \
+build-linux-darwin-windows-freebsd: setup-release gopath-spoof
+	@GOPATH=$(BUILD_TMP) ; \
+	CGO_ENABLED=0 ; \
+	if [ "$(VERBOSE)" == true ]; then \
+		V_ARG="-x" ; \
+	fi ; \
+	for os in $(OSES); do \
 		for arch in $(ARCHS); do \
 			suffix="" ; \
 			if [ "$$os" == "windows" ]; then \
 				suffix=".exe" ; \
 			fi; \
-			env CGO_ENABLED=0 \
-				GOOS=$$os GOARCH=$$arch \
+			env GOOS=$$os GOARCH=$$arch \
 				go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-				-x \
+				$$V_ARG \
 				-o $(BUILD_TMP)/$(SOFTWARE)_$${os}_$${arch}$${suffix} ; \
 			cd $(BUILD_TMP) ; \
 			tar -zcf \
@@ -44,13 +68,18 @@ all-build: install-dep
 				$(SOFTWARE)_$${os}_$${arch}$${suffix} ; \
 			cd $(PWD) ; \
 		done ; \
-	done ; \
-	# ARM
-	@for v in $(ARMS); do \
-	env CGO_ENABLED=0 \
-		GOOS=linux GOARCH=arm GOARM=$${v} \
+	done
+
+build-arms: setup-release gopath-spoof
+	@GOPATH=$(BUILD_TMP) ; \
+	CGO_ENABLED=0 ; \
+	if [ "$(VERBOSE)" == true ]; then \
+		V_ARG="-x" ; \
+	fi ; \
+	for v in $(ARMS); do \
+	env	GOOS=linux GOARCH=arm GOARM=$${v} \
 		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-		-x \
+		$$V_ARG \
 		-o $(BUILD_TMP)/$(SOFTWARE)_linux_arm$${v} ; \
 	done ; \
 	if hash upx 2>/dev/null; then \
@@ -59,18 +88,21 @@ all-build: install-dep
 	cd $(BUILD_TMP) ; \
 	tar -zcf \
 		$(RELEASE)/$(SOFTWARE)-linux-arm-$(VERSION).tar.gz \
-		$(SOFTWARE)_linux_arm* ; \
-	cd $(PWD) ; \
-	#MIPS32LE
-	@env CGO_ENABLED=0 \
-		GOOS=linux GOARCH=mipsle \
+		$(SOFTWARE)_linux_arm*
+
+build-mipsle: setup-release gopath-spoof
+	@GOPATH=$(BUILD_TMP) ; \
+	CGO_ENABLED=0 ; \
+	if [ "$(VERBOSE)" == true ]; then \
+		V_ARG="-x" ; \
+	fi ; \
+	env GOOS=linux GOARCH=mipsle \
 		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-		-x \
+		$$V_ARG \
 		-o $(BUILD_TMP)/$(SOFTWARE)_linux_mipsle; \
-	env CGO_ENABLED=0 \
-		GOOS=linux GOARCH=mipsle \
+	env GOOS=linux GOARCH=mipsle \
 		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-		-x \
+		$$V_ARG \
 		-o $(BUILD_TMP)/$(SOFTWARE)_linux_mips; \
 	if hash upx 2>/dev/null; then \
 		upx -9 ${SOFTWARE}_linux_mips* ; \
@@ -81,19 +113,47 @@ all-build: install-dep
 		$(SOFTWARE)_linux_mipsle ; \
 	tar -zcf \
 		$(RELEASE)/$(SOFTWARE)-linux-mips-$(VERSION).tar.gz \
-		$(SOFTWARE)_linux_mips ; \
-	cd $(PWD)
+		$(SOFTWARE)_linux_mips
 
-all-chksum:
+release-chksum:
+	@echo
 	cd $(RELEASE); $(SUM) *
+	@echo
 
 install-dep:
+	@if ! type glide > /dev/null; then \
+		go get -u github.com/Masterminds/glide ; \
+	fi
 	glide install
+
+gopath-spoof: setup-tmp install-dep
+	ln -s $(PWD)/vendor $(BUILD_TMP)/src
+
+setup-tmp:
+	rm -rf $(BUILD_TMP)
+	mkdir -p $(BUILD_TMP)
 
 clean-tmp:
 	rm -rf $(BUILD_TMP)
 
+clean-dep:
+	rm -rf $(PWD)/vendor
+
 clean: clean-tmp
+	rm -f $(PWD)/$(SOFTWARE)
 	rm -rf $(RELEASE)
 
-.PHONY: love all-build all install-dep clean-tmp clean
+.PHONY: love \
+	release \
+	build \
+	setup-release \
+	build-linux-darwin-windows-freebsd \
+	build-arms \
+	build-mipsle \
+	release-chksum \
+	install-dep \
+	gopath-spoof \
+	setup-tmp \
+	clean-tmp \
+	clean-dep \
+	clean

@@ -8,21 +8,23 @@
 * __Love, rather than sorry__
 
 ## Setup
-```bash
+```console
 $ go get -u github.com/Equim-chan/broken-pantsu
 ```
 or manually
-```bash
+```console
 $ git clone git@github.com:Equim-chan/broken-pantsu.git
 $ make love       # "love, rather than sorry" after all
 $ ./broken-pantsu
 ```
 Build executable files for all platforms and archs
-```bash
-$ make all
+```console
+$ make release -j4
 ```
+> Running `make` with the `-j4` flag will cause it to run 4 compilation jobs concurrently which may significantly reduce build time. The number after `-j` can be changed to best suit the number of processor cores on your machine. If you run into problems running `make` with concurrency, try running it without the `-j4` flag. See the [GNU Make Documentation](https://www.gnu.org/software/make/manual/html_node/Parallel.html) for more information.
+
 Config can be passed via environment. Example:
-```bash
+```console
 $ BP_ADDR=:5543 BP_PUB_PATH=../dist BP_MAX_QUEUE_LEN=100 ./broken-pantsu
 ```
 
