@@ -39,12 +39,13 @@ var (
 
 	redisClient *redis.Client
 
-	locker      sync.Mutex
-	onlineUsers = 0
-	clientsPool = make(map[*Client]bool) // true => not matched, false => matched
-	singleQueue chan *Client
-	broadcast   = make(chan *OutBoundMessage, 10)
-	upgrader    = websocket.Upgrader{}
+	locker        sync.Mutex
+	onlineUsers   = 0
+	clientsPool   = make(map[*Client]bool) // true => not matched, false => matched
+	singleQueue   chan *Client
+	lovelornQueue chan *Client
+	broadcast     = make(chan *OutBoundMessage, 10)
+	upgrader      = websocket.Upgrader{}
 )
 
 func init() {
@@ -65,6 +66,7 @@ func init() {
 		maxQueueLen = 20
 	}
 	singleQueue = make(chan *Client, maxQueueLen)
+	lovelornQueue = make(chan *Client, maxQueueLen)
 
 	redisClient = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -80,11 +82,12 @@ func main() {
 	http.HandleFunc("/", tokenDist)
 	http.HandleFunc("/register", register)
 	http.HandleFunc("/loveStream", handleConnections)
-	http.HandleFunc("/chat", serveFile(filepath.Join(pubPath, "/chat.html")))
+	http.HandleFunc("/chat", sendFile(filepath.Join(pubPath, "/chat.html")))
 	http.Handle("/asset/", http.FileServer(http.Dir(pubPath)))
 
 	go handleBroadcast()
 	go matchingBus()
+	go reunionBus()
 
 	log.Println("Serving at", address)
 	log.Println("http://" + address)
@@ -159,14 +162,17 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 
 	// 匹配
-	if prevMatcherToken, err := redisClient.Get(client.Token).Result(); prevMatcherToken != "" && err != nil {
-		// 如果此人是原配
-		log.Println("FOUND PREV MATCHER", prevMatcherToken)
+	if t, _ := redisClient.Get(client.Token).Result(); t != "" {
+		// 如果此人是断线的
+		log.Println("FOUND A HEARTBROKEN, WISHING TO FIND SOMEONE WITH TOKEN:", t)
+		lovelornQueue <- client
+		client.AwaitPartner() // 这是个阻塞的方法
+		client.SendQueue <- &MatchedNotify{"reunion", client.Partner.ToJsonStruct()}
 	} else {
 		// 如果此人是新来的
 		// 死锁可能性？
 		singleQueue <- client
-		client.AwaitPartner() // 这是个阻塞的方法
+		client.AwaitPartner()
 		client.SendQueue <- &MatchedNotify{"matched", client.Partner.ToJsonStruct()}
 	}
 	defer func() {
@@ -197,7 +203,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		locker.Lock()
 		clientsPool[partner] = true
 		locker.Unlock()
-		singleQueue <- partner
+		//singleQueue <- partner
+		lovelornQueue <- partner
+		log.Println("WE HAVE A LOVELORN HERE NOW")
 		// 因为下面的 Await 会阻塞，所以这里要异步进行
 		go func() {
 			partner.AwaitPartner()
@@ -246,10 +254,10 @@ func handleBroadcast() {
 func matchingBus() {
 	bufferQueue := []*Client{}
 	for {
-		var p *Client = nil
-		var maxSim uint8 = 0
 		// TODO: 考虑更苛刻的条件，比如 maxSim < 3
 		c := <-singleQueue // c主动，p被动
+		var p *Client = nil
+		var maxSim uint8 = 0
 		for {
 			someSingle := <-singleQueue
 			locker.Lock()
@@ -307,5 +315,69 @@ func matchingBus() {
 			// ...
 		}
 		log.Println("SET IN REDIS:", c.Token, "<->", p.Token)
+	}
+}
+
+func reunionBus() {
+	// 力挽狂澜
+	bufferQueue := []*Client{}
+	for {
+		c := <-lovelornQueue
+		var p *Client = nil
+		for {
+			heartBroken := <-lovelornQueue
+			locker.Lock()
+			_, ok0 := clientsPool[c]
+			_, ok1 := clientsPool[heartBroken]
+			locker.Unlock()
+			if !ok0 {
+				lovelornQueue <- heartBroken
+				c = <-lovelornQueue
+				continue
+			}
+			if !ok1 {
+				continue
+			}
+			log.Println("SOME FELLOW HERE")
+			if t, _ := redisClient.Get(c.Token).Result(); t == heartBroken.Token {
+				log.Println("HIS TOKEN SHOULD BE", t)
+				p = heartBroken
+			} else {
+				bufferQueue = append(bufferQueue, heartBroken)
+			}
+
+			if len(lovelornQueue) <= 0 {
+				// 把 buffer 给 dump 出来
+				for _, v := range bufferQueue {
+					// p可能为nil，也可能为匹配到的人
+					if p != v {
+						lovelornQueue <- v
+					}
+				}
+				bufferQueue = nil
+				if p != nil {
+					log.Println("RE-MATCHED! CONGRATZ!")
+					break
+				}
+				log.Println("P IS NIL")
+				c = <-lovelornQueue
+			}
+		}
+
+		c.PartnerReceiver <- p
+		p.PartnerReceiver <- c
+
+		locker.Lock()
+		clientsPool[c], clientsPool[p] = false, false
+		locker.Unlock()
+
+		multi := redisClient.Pipeline()
+		multi.Set(c.Token, p.Token, time.Minute)
+		multi.Set(p.Token, c.Token, time.Minute)
+		if _, err := multi.Exec(); err != nil {
+			log.Println("REDIS ERROR:", err)
+			// ...
+		}
+		log.Println("SET/UPDATE IN REDIS:", c.Token, "<->", p.Token)
 	}
 }
