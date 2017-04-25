@@ -8,7 +8,7 @@
         oldonload();
       }
       func();
-    }
+    };
   }
 })(function(){
   if (!window.WebSocket) {

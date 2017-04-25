@@ -74,34 +74,13 @@ func init() {
 }
 
 func main() {
-	http.Handle("/asset/", http.FileServer(http.Dir(pubPath)))
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		token, err := r.Cookie("token")
-		if err != nil {
-			token := uuid.NewV4().String()
-			log.Println(token)
-			exp := time.Minute * 2
-			expStamp := time.Now().Add(exp)
-			if err = redisClient.Set(token, "", exp).Err(); err != nil {
-				log.Println("REDIS ERROR:", err)
-				// ...
-			}
-
-			tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: expStamp}
-			http.SetCookie(w, tokenCookie)
-		} else {
-			log.Println(token)
-		}
-		http.ServeFile(w, r, path.Join(pubPath, "/index.html"))
-	})
-	http.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, path.Join(pubPath, "chat.html"))
-	})
+	http.HandleFunc("/", tokenDist)
 	http.HandleFunc("/register", register)
 	http.HandleFunc("/loveStream", handleConnections)
+	http.Handle("*", http.FileServer(http.Dir(pubPath)))
 
 	go handleBroadcast()
-	go findPartnerQueue()
+	go matchingBus()
 
 	log.Println("Serving at", address)
 	log.Println("http://" + address)
@@ -112,6 +91,24 @@ type applicantJSON struct {
 	Likes []string `json:"likes"`
 }
 
+func tokenDist(w http.ResponseWriter, r *http.Request) {
+	token, err := r.Cookie("token")
+	if err != nil {
+		token := uuid.NewV4().String()
+		exp := time.Minute * 2
+		expStamp := time.Now().Add(exp)
+
+		tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: expStamp}
+		http.SetCookie(w, tokenCookie)
+	} else {
+		// TODO: 从 redis 验证 token
+		log.Println("ALREADY HAS TOKEN:", token)
+	}
+
+	http.ServeFile(w, r, path.Join(pubPath, "/index.html"))
+}
+
+// 准备 deprecate 这个方法了
 func register(w http.ResponseWriter, r *http.Request) {
 	// TODO: 检查 cookie
 	decoder := json.NewDecoder(r.Body)
@@ -139,14 +136,17 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	// 获取来自客户端的第一条消息，即自己的资料
 	var identity Identity
-	if err := ws.ReadJSON(&identity); err != nil {
-		ws.WriteJSON(&OutBoundMessage{"reject", "malformed JSON request."})
+	if err := ws.ReadJSON(&identity); err != nil || !identity.IsValid() {
+		ws.WriteJSON(&OutBoundMessage{"reject", "malformed request."})
 		return
 	}
 
 	// 根据客户端身份定义 client 对象
 	client := NewClient(ws, &identity)
-	log.Println(client)
+	if err := redisClient.Set(identity.Token, true, time.Second*10).Err(); err != nil {
+		log.Println("REDIS ERROR:", err)
+		// ...
+	}
 	locker.Lock()
 	onlineUsers++
 	clientsPool[client] = true
@@ -228,7 +228,7 @@ func handleBroadcast() {
 	}
 }
 
-func findPartnerQueue() {
+func matchingBus() {
 	bufferQueue := []*Client{}
 	for {
 		var p *Client = nil

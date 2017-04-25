@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/gorilla/websocket"
 	"log"
+
+	"github.com/gorilla/websocket"
 )
 
 var (
@@ -38,6 +39,7 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 	var likesMask uint64 = 0
 	sanitizedLikes := []string{}
 
+	// 将输入过滤，并得到 likesMask
 	for _, item := range identity.Likes {
 		var mask uint64 = 0
 		for pos, value := range likesList {
@@ -53,12 +55,20 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 			}
 		}
 	}
-
 	identity.Likes = sanitizedLikes
+
 	sendQueue := make(chan interface{}, 20)
 	ret := &Client{identity, conn, sendQueue, nil, make(chan *Client), likesMask}
 	go ret.runSendQueue()
+
 	return ret
+}
+
+func (i *Identity) IsValid() bool {
+	return i.Username != "" &&
+		i.Token != "" &&
+		i.Timezone >= -12 &&
+		i.Timezone <= 12
 }
 
 // 保证不会出现并发写
