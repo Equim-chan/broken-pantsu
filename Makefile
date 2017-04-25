@@ -1,7 +1,10 @@
+SOFTWARE := broken-pantsu
 VERSION := ${shell date -u +%y%m%d}
+RELEASE := ./release
+SOURCE := main.go client.go
 
-build: install-dep
-	go build -ldflags "-X main.version=${VERSION}" -v -x -o broken-pantsu main.go client.go
+love: install-dep
+	go build -ldflags "-X main.version=${VERSION}" -v -x -o ${SOFTWARE} ${SOURCE}
 
 all: install-dep
 	./build_all

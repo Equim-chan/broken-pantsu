@@ -11,6 +11,12 @@
 ```bash
 $ go get -u github.com/Equim-chan/broken-pantsu
 ```
+or manually
+```bash
+$ git clone git@github.com:Equim-chan/broken-pantsu.git
+$ make love
+$ ./broken-pantsu
+```
 Config can be passed via environment. Example:
 ```bash
 $ BP_ADDR=:5543 BP_PUB_PATH=../dist BP_MAX_QUEUE_LEN=100 ./broken-pantsu

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	_ "net/http/pprof"
+
 	"github.com/go-redis/redis"
 	"github.com/gorilla/websocket"
 	"github.com/satori/go.uuid"
@@ -77,7 +79,8 @@ func main() {
 	http.HandleFunc("/", tokenDist)
 	http.HandleFunc("/register", register)
 	http.HandleFunc("/loveStream", handleConnections)
-	http.Handle("*", http.FileServer(http.Dir(pubPath)))
+	http.Handle("/chat", http.FileServer(http.Dir(pubPath)))
+	http.Handle("/asset/", http.FileServer(http.Dir(pubPath)))
 
 	go handleBroadcast()
 	go matchingBus()
@@ -161,7 +164,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 
-	// 配对
+	// 匹配
 	// 死锁可能性？
 	singleQueue <- client
 	client.AwaitPartner() // 这是个阻塞的方法
@@ -169,6 +172,18 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		// 要在这里，大做文章
 		// 目前只是我方掉线之后对方重新回到单身队列
 		// 但是我们的目标可不是这个！
+		//
+		// 我们把对方被动掉线后己方的状态称为失恋状态
+		//
+		// TODO:
+		// * 区分主动下线与被动掉线
+		//
+		// 工作流:
+		// * 向掉线的人的 Partner 发送对方被动掉线的消息
+		// * partner 陷入等待状态，有几种情况
+		//   * partner 主动下线 -> 直接销毁匹配
+		//   * partner 被动掉线 -> 保留匹配，当一方上线时直接进入失恋状态
+		//   * 有新 client 的 Token 为刚刚掉线的人的 Token -> 直接匹配
 		partner := client.Partner
 		locker.Lock()
 		_, ok := clientsPool[partner]

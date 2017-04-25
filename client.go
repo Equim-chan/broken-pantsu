@@ -66,6 +66,7 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 
 func (i *Identity) IsValid() bool {
 	return i.Username != "" &&
+		len(i.Username) <= 20 &&
 		i.Token != "" &&
 		i.Timezone >= -12 &&
 		i.Timezone <= 12
