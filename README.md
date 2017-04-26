@@ -29,6 +29,7 @@ $ BP_ADDR=:5543 BP_PUB_PATH=../dist BP_MAX_QUEUE_LEN=100 ./broken-pantsu
 ```
 
 ## Dependencies
+We use [glide](https://github.com/Masterminds/glide) as package manager.
 * [github.com/gorilla/websocket](https://github.com/gorilla/websocket)
 * [github.com/satori/go.uuid](https://github.com/satori/go.uuid)
 * [github.com/go-redis/redis](https://github.com/go-redis/redis)
@@ -42,6 +43,7 @@ There are lots of things to do at the moment...
 * [ ] add session support (in age of 3 hours)
 * [x] enforce matching algorithm
 * [ ] check for thread safety
+* [ ] check for memory leak possibility
 * [x] setup travis CI
 * [x] migrate build_all into Makefile
 * [ ] add test suite
@@ -49,18 +51,19 @@ There are lots of things to do at the moment...
 ### Frontend
 * [ ] complete the UI
 * [x] add emoji support
+* [ ] add "savelog" button
+* [ ] add "switch partner" button
+* [ ] add "quit" button
 * [ ] check for XSS
 * [x] separate HTML, CSS and JS
 * [x] add browser-out-of-date warning
-* [ ] add savelog button
 * [ ] _add auto-reconnection after dc_
 
 ### Features
 * [ ] display "your partner is typing"
-* [ ] display "√" for the partner has read
 * [ ] display and auto-refreash online users count
 * [ ] display partner's nickname, avatar, likes, timezone
-* [ ] ensure partners can still find each others after unexpected disconnection
+* [x] __ensure partners can still find each others after unexpected disconnection__
 
 ## License
 [Apache-2.0](https://github.com/Equim-chan/broken-pantsu/blob/master/LICENSE)

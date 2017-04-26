@@ -26,7 +26,6 @@ type Identity struct {
 type Client struct {
 	*Identity
 	Conn                *websocket.Conn
-	IsDisconnected      bool
 	DisconnectionSignal chan uint8 // uint8 备用作为信号类型
 	RecvQueue           chan *InBoundMessage
 	SendQueue           chan interface{}
@@ -68,7 +67,6 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 	c := &Client{
 		Identity:            identity,
 		Conn:                conn,
-		IsDisconnected:      false,
 		DisconnectionSignal: make(chan uint8),
 		RecvQueue:           make(chan *InBoundMessage, 20),
 		SendQueue:           make(chan interface{}, 20),
@@ -79,10 +77,7 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 	go c.runRecvQueue()
 	go c.runSendQueue()
 
-	locker.Lock()
-	onlineUsers++
-	clientsPool[c] = true
-	locker.Unlock()
+	c.addToPool()
 
 	broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 
@@ -109,6 +104,20 @@ func (i *Identity) IsValid() bool {
 		i.Timezone <= 12
 }
 
+func (c *Client) addToPool() {
+	locker.Lock()
+	onlineUsers++
+	clientsPool[c] = true
+	locker.Unlock()
+}
+
+func (c *Client) removeFromPool() {
+	locker.Lock()
+	delete(clientsPool, c)
+	onlineUsers--
+	locker.Unlock()
+}
+
 // 保证不会出现并发读
 // 注意，这个函数不会接管身份验证，只在匹配成功后有效
 func (c *Client) runRecvQueue() {
@@ -117,12 +126,8 @@ func (c *Client) runRecvQueue() {
 
 		if err := c.Conn.ReadJSON(&inMsg); err != nil {
 			log.Println("(FROM READ) DISCONNECTED:", c.Token)
-			c.IsDisconnected = true
 
-			locker.Lock()
-			delete(clientsPool, c)
-			onlineUsers--
-			locker.Unlock()
+			c.removeFromPool()
 
 			broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 			c.DisconnectionSignal <- 1
@@ -135,6 +140,7 @@ func (c *Client) runRecvQueue() {
 			continue
 		}
 
+		// 将消息暴露给外部处理
 		c.RecvQueue <- &inMsg
 	}
 }
@@ -143,20 +149,21 @@ func (c *Client) runRecvQueue() {
 // outMsg 的类型是 interface{}，所以可以发送的对象类型不一定要是 OutBoundMessage
 func (c *Client) runSendQueue() {
 	for {
-		outMsg := <-c.SendQueue
+		select {
+		case outMsg := <-c.SendQueue:
+			if err := c.Conn.WriteJSON(outMsg); err != nil {
+				log.Println("(FROM WRITE) DISCONNECTED:", c.Token)
 
-		if err := c.Conn.WriteJSON(outMsg); err != nil {
-			log.Println("(FROM WRITE) DISCONNECTED:", c.Token)
-			c.IsDisconnected = true
+				c.removeFromPool()
 
-			locker.Lock()
-			delete(clientsPool, c)
-			onlineUsers--
-			locker.Unlock()
-
-			broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
-			c.DisconnectionSignal <- 2
-			break
+				broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
+				c.DisconnectionSignal <- 2
+				return
+			}
+		case <-c.DisconnectionSignal:
+			// 既然能收到这个信号，那么必定是从 runRecvQueue 或 runSendQueue 来的
+			// 所以就断言，已经做了 removeFromPool 的处理，这里只要回收这个 goroutine 就好
+			return
 		}
 	}
 }

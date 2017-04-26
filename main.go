@@ -66,6 +66,7 @@ func init() {
 	singleQueue = make(chan *Client, maxQueueLen)
 	lovelornQueue = make(chan *Client, maxQueueLen)
 
+	// TODO: 从环境变量传入 redis 属性
 	redisClient = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "",
@@ -181,8 +182,10 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		//singleQueue <- p
 		lovelornQueue <- p
 
-		// 因为下面的 Await 会阻塞而影响后面的 defer，所以这里要异步进行
+		// 因为下面的 Await 会阻塞而影响后面的 defer（其实也就个 ws.Close），所以这里要异步进行
 		go func() {
+			// TODO: 处理在这个时候 p 断连的情况
+			// 可以换个想法，比如这时候把这个信号发给 p，就可以在 p 处处理，而不是在这个 defer 里处理了
 			p.AwaitPartner()
 			//p.SendQueue <- &MatchedNotify{"matched", p.Partner.ToJsonStruct()}
 			p.SendQueue <- &MatchedNotify{"reunion", p.Partner.ToJsonStruct()}
@@ -221,6 +224,8 @@ func matchingBus() {
 		var maxSim uint8 = 0
 		for {
 			someSingle := <-singleQueue
+
+			// 这里会检查两者中有没有其中哪个在等待的过程中下线了
 			locker.Lock()
 			_, ok0 := clientsPool[c]
 			_, ok1 := clientsPool[someSingle]
@@ -266,14 +271,15 @@ func matchingBus() {
 	}
 }
 
+// 力挽狂澜
 func reunionBus() {
-	// 力挽狂澜
 	bufferQueue := []*Client{}
 	for {
 		c := <-lovelornQueue
 		var p *Client = nil
 		for {
 			heartBroken := <-lovelornQueue
+
 			locker.Lock()
 			_, ok0 := clientsPool[c]
 			_, ok1 := clientsPool[heartBroken]
@@ -312,10 +318,6 @@ func reunionBus() {
 
 		c.PartnerReceiver <- p
 		p.PartnerReceiver <- c
-
-		locker.Lock()
-		clientsPool[c], clientsPool[p] = false, false
-		locker.Unlock()
 
 		multi := redisClient.Pipeline()
 		multi.Del(c.Token)
