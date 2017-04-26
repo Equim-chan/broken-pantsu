@@ -13,7 +13,7 @@ ARMS := 5 6 7
 SUM := sha1sum
 
 SHELL := /bin/bash
-VERBOSE := true
+VERBOSE := false
 
 love: setup-tmp \
 	install-dep \
@@ -26,9 +26,12 @@ release: setup-tmp \
 	setup-release \
 	install-dep \
 	gopath-spoof \
-	build-linux-darwin-windows-freebsd \
-	build-arms \
-	build-mipsle
+	release-linux \
+	release-darwin \
+	release-windows \
+	release-freebsd \
+	release-arms \
+	release-mipsle
 
 	make clean-tmp
 	make release-chksum
@@ -37,83 +40,112 @@ build:
 	@GOPATH=$(BUILD_TMP) ; \
 	CGO_ENABLED=0 ; \
 	if [ "$(VERBOSE)" == true ]; then \
-		V_ARG="-x" ; \
+		$(V_ARG)="-x" ; \
 	fi ; \
 	go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-		$$V_ARG \
+		$(V_ARG) \
 		-o $(SOFTWARE)
 
 setup-release:
 	mkdir -p $(RELEASE)
+	@if [ "$(VERBOSE)" == true ]; then \
+		$(V_ARG)="-x" ; \
+	fi ; \
 
-build-linux-darwin-windows-freebsd: setup-release gopath-spoof
+release-linux: setup-release gopath-spoof
 	@GOPATH=$(BUILD_TMP) ; \
 	CGO_ENABLED=0 ; \
-	if [ "$(VERBOSE)" == true ]; then \
-		V_ARG="-x" ; \
-	fi ; \
-	for os in $(OSES); do \
-		for arch in $(ARCHS); do \
-			suffix="" ; \
-			if [ "$$os" == "windows" ]; then \
-				suffix=".exe" ; \
-			fi; \
-			env GOOS=$$os GOARCH=$$arch \
-				go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-				$$V_ARG \
-				-o $(BUILD_TMP)/$(SOFTWARE)_$${os}_$${arch}$${suffix} ; \
-			cd $(BUILD_TMP) ; \
-			tar -zcf \
-				$(RELEASE)/$(SOFTWARE)-$${os}-$${arch}-$(VERSION).tar.gz \
-				$(SOFTWARE)_$${os}_$${arch}$${suffix} ; \
-			cd $(PWD) ; \
-		done ; \
-	done
+	for arch in $(ARCHS); do \
+		GOOS=linux GOARCH=$$arch \
+			go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
+			$(V_ARG) \
+			-o $(BUILD_TMP)/$(SOFTWARE)-linux-$${arch} ; \
+		cd $(BUILD_TMP) ; \
+		tar -zcf \
+			$(RELEASE)/$(SOFTWARE)-linux-$${arch}-$(VERSION).tar.gz \
+			$(SOFTWARE)-linux-$${arch} ; \
+		cd $(PWD) ; \
+	done ; \
 
-build-arms: setup-release gopath-spoof
-	@GOPATH=$(BUILD_TMP) ; \
-	CGO_ENABLED=0 ; \
-	if [ "$(VERBOSE)" == true ]; then \
-		V_ARG="-x" ; \
-	fi ; \
-	for v in $(ARMS); do \
-	env	GOOS=linux GOARCH=arm GOARM=$${v} \
+release-darwin: setup-release gopath-spoof
+	@for arch in $(ARCHS); do \
+		GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
+			GOOS=darwin GOARCH=$$arch \
+			go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
+			$(V_ARG) \
+			-o $(BUILD_TMP)/$(SOFTWARE)-darwin-$${arch} ; \
+		cd $(BUILD_TMP) ; \
+		tar -zcf \
+			$(RELEASE)/$(SOFTWARE)-darwin-$${arch}-$(VERSION).tar.gz \
+			$(SOFTWARE)-darwin-$${arch} ; \
+		cd $(PWD) ; \
+	done ; \
+
+release-windows: setup-release gopath-spoof
+	@for arch in $(ARCHS); do \
+		GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
+			GOOS=windows GOARCH=$$arch \
+			go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
+			$(V_ARG) \
+			-o $(BUILD_TMP)/$(SOFTWARE)-windows-$${arch}.exe ; \
+		cd $(BUILD_TMP) ; \
+		tar -zcf \
+			$(RELEASE)/$(SOFTWARE)-windows-$${arch}-$(VERSION).tar.gz \
+			$(SOFTWARE)-windows-$${arch}.exe ; \
+		cd $(PWD) ; \
+	done ; \
+
+release-freebsd: setup-release gopath-spoof
+	@for arch in $(ARCHS); do \
+		GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
+			GOOS=freebsd GOARCH=$$arch \
+			go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
+			$(V_ARG) \
+			-o $(BUILD_TMP)/$(SOFTWARE)-freebsd-$${arch} ; \
+		cd $(BUILD_TMP) ; \
+		tar -zcf \
+			$(RELEASE)/$(SOFTWARE)-freebsd-$${arch}-$(VERSION).tar.gz \
+			$(SOFTWARE)-freebsd-$${arch} ; \
+		cd $(PWD) ; \
+	done ; \
+
+release-arms: setup-release gopath-spoof
+	@for v in $(ARMS); do \
+	GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
+		GOOS=linux GOARCH=arm GOARM=$${v} \
 		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-		$$V_ARG \
-		-o $(BUILD_TMP)/$(SOFTWARE)_linux_arm$${v} ; \
+		$(V_ARG) \
+		-o $(BUILD_TMP)/$(SOFTWARE)-linux-arm$${v} ; \
 	done ; \
 	if hash upx 2>/dev/null; then \
-		upx -9 $(SOFTWARE)_linux_arm* ; \
+		upx -9 $(SOFTWARE)-linux-arm* ; \
 	fi ; \
 	cd $(BUILD_TMP) ; \
 	tar -zcf \
 		$(RELEASE)/$(SOFTWARE)-linux-arm-$(VERSION).tar.gz \
-		$(SOFTWARE)_linux_arm*
+		$(SOFTWARE)-linux-arm*
 
-build-mipsle: setup-release gopath-spoof
-	@GOPATH=$(BUILD_TMP) ; \
-	CGO_ENABLED=0 ; \
-	if [ "$(VERBOSE)" == true ]; then \
-		V_ARG="-x" ; \
-	fi ; \
-	env GOOS=linux GOARCH=mipsle \
+release-mipsle: setup-release gopath-spoof
+	@GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
+		GOOS=linux GOARCH=mipsle \
 		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-		$$V_ARG \
-		-o $(BUILD_TMP)/$(SOFTWARE)_linux_mipsle; \
-	env GOOS=linux GOARCH=mipsle \
+		$(V_ARG) \
+		-o $(BUILD_TMP)/$(SOFTWARE)-linux-mipsle; \
+	GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
+		GOOS=linux GOARCH=mipsle \
 		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-		$$V_ARG \
-		-o $(BUILD_TMP)/$(SOFTWARE)_linux_mips; \
+		$(V_ARG) \
+		-o $(BUILD_TMP)/$(SOFTWARE)-linux-mips; \
 	if hash upx 2>/dev/null; then \
-		upx -9 ${SOFTWARE}_linux_mips* ; \
+		upx -9 ${SOFTWARE}-linux-mips* ; \
 	fi ; \
 	cd $(BUILD_TMP) ; \
 	tar -zcf \
 		$(RELEASE)/$(SOFTWARE)-linux-mipsle-$(VERSION).tar.gz \
-		$(SOFTWARE)_linux_mipsle ; \
+		$(SOFTWARE)-linux-mipsle ; \
 	tar -zcf \
 		$(RELEASE)/$(SOFTWARE)-linux-mips-$(VERSION).tar.gz \
-		$(SOFTWARE)_linux_mips
+		$(SOFTWARE)-linux-mips
 
 release-chksum:
 	@echo
@@ -147,9 +179,9 @@ clean: clean-tmp
 	release \
 	build \
 	setup-release \
-	build-linux-darwin-windows-freebsd \
-	build-arms \
-	build-mipsle \
+	release-linux-darwin-windows-freebsd \
+	release-arms \
+	release-mipsle \
 	release-chksum \
 	install-dep \
 	gopath-spoof \
