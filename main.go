@@ -151,6 +151,38 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	onlineUsers++
 	clientsPool[client] = true
 	locker.Unlock()
+	// TODO: 把这个方法作为 Client 的属性，这样 Write 和 Read 都由 Client 类接管了
+	go func() {
+		for {
+			var inMsg InBoundMessage
+			if err := ws.ReadJSON(&inMsg); err != nil {
+				log.Printf("recv error: %v", err)
+				locker.Lock()
+				delete(clientsPool, client)
+				locker.Unlock()
+				break
+			}
+
+			if client.Partner == nil {
+				// 所以默认会把匹配前发送的包丢弃
+				continue
+			}
+
+			outMsg := &OutBoundMessage{}
+
+			// TODO: 有没有 switch 的必要？
+			switch inMsg.Type {
+			case "chat":
+				outMsg.Type = "chat"
+				outMsg.Message = inMsg.Message
+			case "typing":
+				outMsg.Type = "typing"
+				outMsg.Message = inMsg.Message
+			}
+
+			client.Partner.SendQueue <- outMsg
+		}
+	}()
 	defer func() {
 		locker.Lock()
 		onlineUsers--
@@ -214,31 +246,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			partner.SendQueue <- &MatchedNotify{"reunion", partner.Partner.ToJsonStruct()}
 		}()
 	}()
-
-	for {
-		var inMsg InBoundMessage
-		if err := ws.ReadJSON(&inMsg); err != nil {
-			log.Printf("recv error: %v", err)
-			locker.Lock()
-			delete(clientsPool, client)
-			locker.Unlock()
-			break
-		}
-
-		outMsg := &OutBoundMessage{}
-
-		// TODO: 有没有 switch 的必要？
-		switch inMsg.Type {
-		case "chat":
-			outMsg.Type = "chat"
-			outMsg.Message = inMsg.Message
-		case "typing":
-			outMsg.Type = "typing"
-			outMsg.Message = inMsg.Message
-		}
-
-		client.Partner.SendQueue <- outMsg
-	}
+	// 现在这里只是简单地阻塞住
+	// TODO: 在收到断线信号的时候终止该函数，用 channel，这样才能保证连接并能在断线时触发 defer
+	<-make(chan bool)
 }
 
 func handleBroadcast() {
