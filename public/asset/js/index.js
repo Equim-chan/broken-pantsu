@@ -41,6 +41,7 @@ $(function () {
   var token = util.readCookie('token');
   if (!token) {
     location.reload(true);
+    return;
   }
   var wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/loveStream';
   var ws = new WebSocket(wsUrl);

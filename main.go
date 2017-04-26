@@ -141,6 +141,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	var identity Identity
 	if err := ws.ReadJSON(&identity); err != nil || !identity.IsValid() {
 		ws.WriteJSON(&OutBoundMessage{"reject", "Malformed request."})
+		ws.Close()
 		return
 	}
 
@@ -272,9 +273,6 @@ func matchingBus() {
 			if !ok1 {
 				continue
 			}
-			if c.Token == someSingle.Token {
-				continue
-			}
 
 			sim := c.SimilarityWith(someSingle)
 			// 匹配相似度最高的。如果遇到相似度相同的，则匹配对方喜好数最小的
@@ -282,6 +280,7 @@ func matchingBus() {
 				p = someSingle
 				maxSim = sim
 			}
+
 			bufferQueue = append(bufferQueue, someSingle)
 
 			if len(singleQueue) <= 0 {
