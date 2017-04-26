@@ -82,7 +82,6 @@ func main() {
 	http.HandleFunc("/", tokenDist)
 	http.HandleFunc("/register", register)
 	http.HandleFunc("/loveStream", handleConnections)
-	http.HandleFunc("/chat", sendFile(filepath.Join(pubPath, "/chat.html")))
 	http.Handle("/asset/", http.FileServer(http.Dir(pubPath)))
 
 	go handleBroadcast()
@@ -162,8 +161,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 
 	// 匹配
+	// TODO: 处理在匹配未完成时下线的情况
 	if t, _ := redisClient.Get(client.Token).Result(); t != "" {
-		// 如果此人是断线的
+		// 如果此人是之前断线的
 		log.Println("FOUND A HEARTBROKEN, WISHING TO FIND SOMEONE WITH TOKEN:", t)
 		lovelornQueue <- client
 		client.AwaitPartner() // 这是个阻塞的方法
@@ -266,14 +266,16 @@ func matchingBus() {
 			_, ok1 := clientsPool[someSingle]
 			locker.Unlock()
 			if !ok0 {
-				singleQueue <- someSingle
-				c = <-singleQueue
+				c = someSingle
 				continue
 			}
 			if !ok1 {
 				continue
 			}
-			// TODO: 避免在极端情况下出现自己和自己匹配上的情况(利用token确认)
+			if c.Token == someSingle.Token {
+				continue
+			}
+
 			sim := c.SimilarityWith(someSingle)
 			// 匹配相似度最高的。如果遇到相似度相同的，则匹配对方喜好数最小的
 			if sim > maxSim || sim == maxSim && maxSim > 0 && someSingle.LikesCount() < p.LikesCount() {
@@ -332,8 +334,7 @@ func reunionBus() {
 			_, ok1 := clientsPool[heartBroken]
 			locker.Unlock()
 			if !ok0 {
-				lovelornQueue <- heartBroken
-				c = <-lovelornQueue
+				c = heartBroken
 				continue
 			}
 			if !ok1 {
