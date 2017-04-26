@@ -1,6 +1,6 @@
 SOFTWARE := broken-pantsu
 
-READLINK := "$(shell if type greadlink > /dev/null; then echo greadlink; else echo readlink; fi)"
+READLINK := "$(shell if type greadlink > /dev/null 2>&1 ; then echo greadlink; else echo readlink; fi)"
 
 RELEASE := "$(shell $(READLINK) -f ./release)"
 BUILD_TMP := "$(shell $(READLINK) -f ./tmp)"
@@ -146,15 +146,13 @@ release-chksum:
 	@echo
 
 install-dep:
-	@if [ ! -d $(PWD)/vendor ]; then \
-		if ! type glide > /dev/null; then \
-			if [ ! -d $$GOPATH/bin/glide ]; then \
-				go get -u github.com/Masterminds/glide ; \
-			fi ; \
-			$$GOPATH/bin/glide install ; \
-		else \
-			glide install ; \
+	@if ! type glide > /dev/null 2>&1 ; then \
+		if [ ! -d $$GOPATH/bin/glide ]; then \
+			go get -u github.com/Masterminds/glide ; \
 		fi ; \
+		$$GOPATH/bin/glide install ; \
+	else \
+		glide install ; \
 	fi
 
 gopath-spoof: setup-tmp install-dep

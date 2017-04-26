@@ -2,12 +2,17 @@ package main
 
 import (
 	"log"
+	"strconv"
 
 	"github.com/gorilla/websocket"
 )
 
+var likesList = [...]string{"Yuri", "Cosplay", "Crossdressing", "Cuddling", "Eyebrows", "Fangs", "Fantasy", "Futanari", "Genderbend", "Glasses", "Hentai", "Holding Hands", "Horror", "Housewife", "Humiliation", "Idol", "Incest", "Loli", "Maid", "Miko", "Monster Girl", "Muscles", "Netorare", "Nurse", "Office Lady", "Oppai", "Schoolgirl", "Sci-Fi", "Shota", "Slice-of-Life", "Socks", "Spread", "Stockings", "Swimsuit", "Teacher", "Tentacles", "Tomboy", "Tsundere", "Vanilla", "Warm Smiles", "Western", "Yandere", "Yaoi", "Yukata"} // len = 43
+
 var (
-	likesList = [...]string{"Yuri", "Cosplay", "Crossdressing", "Cuddling", "Eyebrows", "Fangs", "Fantasy", "Futanari", "Genderbend", "Glasses", "Hentai", "Holding Hands", "Horror", "Housewife", "Humiliation", "Idol", "Incest", "Loli", "Maid", "Miko", "Monster Girl", "Muscles", "Netorare", "Nurse", "Office Lady", "Oppai", "Schoolgirl", "Sci-Fi", "Shota", "Slice-of-Life", "Socks", "Spread", "Stockings", "Swimsuit", "Teacher", "Tentacles", "Tomboy", "Tsundere", "Vanilla", "Warm Smiles", "Western", "Yandere", "Yaoi", "Yukata"} // len = 43
+	onlineUsers = 0
+	clientsPool = make(map[*Client]bool) // true => not matched, false => matched
+	broadcast   = make(chan *OutBoundMessage, 10)
 )
 
 type Identity struct {
@@ -20,11 +25,14 @@ type Identity struct {
 
 type Client struct {
 	*Identity
-	Conn            *websocket.Conn
-	SendQueue       chan interface{}
-	Partner         *Client
-	PartnerReceiver chan *Client
-	likesMask       uint64
+	Conn                *websocket.Conn
+	IsDisconnected      bool
+	DisconnectionSignal chan uint8 // uint8 备用作为信号类型
+	RecvQueue           chan *InBoundMessage
+	SendQueue           chan interface{}
+	Partner             *Client
+	PartnerReceiver     chan *Client
+	likesMask           uint64
 }
 
 type ClientJSON struct {
@@ -57,11 +65,40 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 	}
 	identity.Likes = sanitizedLikes
 
-	sendQueue := make(chan interface{}, 20)
-	ret := &Client{identity, conn, sendQueue, nil, make(chan *Client), likesMask}
-	go ret.runSendQueue()
+	c := &Client{
+		Identity:            identity,
+		Conn:                conn,
+		IsDisconnected:      false,
+		DisconnectionSignal: make(chan uint8),
+		RecvQueue:           make(chan *InBoundMessage, 20),
+		SendQueue:           make(chan interface{}, 20),
+		Partner:             nil,
+		PartnerReceiver:     make(chan *Client),
+		likesMask:           likesMask,
+	}
+	go c.runRecvQueue()
+	go c.runSendQueue()
 
-	return ret
+	locker.Lock()
+	onlineUsers++
+	clientsPool[c] = true
+	locker.Unlock()
+
+	broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
+
+	return c
+}
+
+func handleBroadcast() {
+	for {
+		outMsg := <-broadcast
+
+		locker.Lock()
+		for c := range clientsPool {
+			c.SendQueue <- outMsg
+		}
+		locker.Unlock()
+	}
 }
 
 func (i *Identity) IsValid() bool {
@@ -72,17 +109,54 @@ func (i *Identity) IsValid() bool {
 		i.Timezone <= 12
 }
 
+// 保证不会出现并发读
+// 注意，这个函数不会接管身份验证，只在匹配成功后有效
+func (c *Client) runRecvQueue() {
+	for {
+		var inMsg InBoundMessage
+
+		if err := c.Conn.ReadJSON(&inMsg); err != nil {
+			log.Println("(FROM READ) DISCONNECTED:", c.Token)
+			c.IsDisconnected = true
+
+			locker.Lock()
+			delete(clientsPool, c)
+			onlineUsers--
+			locker.Unlock()
+
+			broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
+			c.DisconnectionSignal <- 1
+			// Conn 的回收由上层的 defer 负责
+			break
+		}
+
+		if c.Partner == nil {
+			// 默认会把匹配前发送的包丢弃
+			continue
+		}
+
+		c.RecvQueue <- &inMsg
+	}
+}
+
 // 保证不会出现并发写
+// outMsg 的类型是 interface{}，所以可以发送的对象类型不一定要是 OutBoundMessage
 func (c *Client) runSendQueue() {
 	for {
 		outMsg := <-c.SendQueue
 
 		if err := c.Conn.WriteJSON(outMsg); err != nil {
-			log.Printf("send error: %v", err)
-			c.Conn.Close()
+			log.Println("(FROM WRITE) DISCONNECTED:", c.Token)
+			c.IsDisconnected = true
+
 			locker.Lock()
 			delete(clientsPool, c)
+			onlineUsers--
 			locker.Unlock()
+
+			broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
+			c.DisconnectionSignal <- 2
+			break
 		}
 	}
 }

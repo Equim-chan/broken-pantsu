@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -40,15 +39,14 @@ var (
 	redisClient *redis.Client
 
 	locker        sync.Mutex
-	onlineUsers   = 0
-	clientsPool   = make(map[*Client]bool) // true => not matched, false => matched
 	singleQueue   chan *Client
 	lovelornQueue chan *Client
-	broadcast     = make(chan *OutBoundMessage, 10)
 	upgrader      = websocket.Upgrader{}
 )
 
 func init() {
+	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
+
 	ok := false
 
 	if address, ok = os.LookupEnv("BP_ADDR"); !ok {
@@ -76,19 +74,18 @@ func init() {
 	if err := redisClient.Ping().Err(); err != nil {
 		log.Fatalln("REDIS SETUP ERROR:", err)
 	}
-}
-
-func main() {
-	http.HandleFunc("/", tokenDist)
-	http.HandleFunc("/register", register)
-	http.HandleFunc("/loveStream", handleConnections)
-	http.Handle("/asset/", http.FileServer(http.Dir(pubPath)))
 
 	go handleBroadcast()
 	go matchingBus()
 	go reunionBus()
+}
 
-	log.Println("Serving at", address)
+func main() {
+	http.HandleFunc("/", tokenDist)
+	http.HandleFunc("/loveStream", handleConnections)
+	http.Handle("/asset/", http.FileServer(http.Dir(pubPath)))
+
+	log.Println("Serving at " + address + ", GOOD LUCK!")
 	log.Println("http://" + address)
 	log.Fatal(http.ListenAndServe(address, nil))
 }
@@ -111,25 +108,6 @@ func tokenDist(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(pubPath, "/index.html"))
 }
 
-// 准备 deprecate 这个方法了
-func register(w http.ResponseWriter, r *http.Request) {
-	// TODO: 检查 cookie
-	decoder := json.NewDecoder(r.Body)
-	var t applicantJSON
-	err := decoder.Decode(&t)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"message":"malformed JSON request"}`)) // TODO: 转为常量
-		return
-	}
-	// TODO: 检查标签的有效性(是否在预设的列表中)
-	// 然后将标签化为 uint64 flag，保存到 redis
-	// 这里暂且用 map
-	//log.Println(t.Likes)
-	// TODO: 返回成功 JSON
-}
-
 func handleConnections(w http.ResponseWriter, r *http.Request) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -138,6 +116,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	defer ws.Close()
 
 	// 获取来自客户端的第一条消息，即自己的资料
+	// 只有这步是由 main.go 负责的，其余的收发均在 client.go 内
 	var identity Identity
 	if err := ws.ReadJSON(&identity); err != nil || !identity.IsValid() {
 		ws.WriteJSON(&OutBoundMessage{"reject", "Malformed request."})
@@ -146,28 +125,73 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 根据客户端身份定义 client 对象
-	client := NewClient(ws, &identity)
-	locker.Lock()
-	onlineUsers++
-	clientsPool[client] = true
-	locker.Unlock()
-	// TODO: 把这个方法作为 Client 的属性，这样 Write 和 Read 都由 Client 类接管了
-	go func() {
-		for {
-			var inMsg InBoundMessage
-			if err := ws.ReadJSON(&inMsg); err != nil {
-				log.Printf("recv error: %v", err)
-				locker.Lock()
-				delete(clientsPool, client)
-				locker.Unlock()
-				break
-			}
+	c := NewClient(ws, &identity)
+	log.Println("CONNECTED:", c.Token)
 
-			if client.Partner == nil {
-				// 所以默认会把匹配前发送的包丢弃
-				continue
-			}
+	// 匹配
+	// TODO: 处理在匹配未完成时下线的情况
+	if t, _ := redisClient.Get(c.Token).Result(); t != "" {
+		// 如果此人是之前断线的
+		log.Println("FOUND A HEARTBROKEN WISHING TO FIND:", t)
+		lovelornQueue <- c
+		c.AwaitPartner() // 这是个阻塞的方法
+		c.SendQueue <- &MatchedNotify{"reunion", c.Partner.ToJsonStruct()}
+	} else {
+		// 如果此人是新来的
+		singleQueue <- c
+		c.AwaitPartner()
+		c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}
+	}
+	defer func() {
+		log.Println("DEFER IS TRIGGERED FOR:", c.Token)
+		// 要在这里，大做文章
+		// 目前只是我方掉线之后对方重新回到单身队列
+		// 但是我们的目标可不是这个！
+		//
+		// 我们把对方被动掉线后己方的状态称为失恋状态
+		// 掉线的一方称为原配
+		//
+		// 工作流:
+		// * 向掉线的人的 Partner 发送对方被动掉线的消息
+		// * partner 进入失恋队列，陷入等待状态，有几种情况
+		//   * partner 主动下线 -> 直接销毁匹配
+		//   * partner 被动掉线 -> 保留匹配，当一方上线时直接进入失恋状态
+		//   * 有新 client 的 Token 为刚刚掉线的人的 Token -> 直接匹配
+		p := c.Partner
 
+		locker.Lock()
+		_, ok := clientsPool[p]
+		locker.Unlock()
+		if !ok {
+			return
+		}
+
+		p.Partner = nil
+
+		// TODO: 在这里检测是否是主动下线，如果是被动下线则继续执行下面的
+		multi := redisClient.Pipeline()
+		multi.Set(c.Token, p.Token, time.Minute*2) // TODO: 这只是测试用，生产环境建议设置为 1~3 小时，视情况
+		multi.Set(p.Token, c.Token, time.Minute*2)
+		if _, err := multi.Exec(); err != nil {
+			log.Println("REDIS ERROR:", err)
+			// ...
+		}
+		log.Println("SET NEW LOVELORN PAIR IN REDIS:", c.Token, "<ღ>", p.Token)
+
+		//singleQueue <- p
+		lovelornQueue <- p
+
+		// 因为下面的 Await 会阻塞而影响后面的 defer，所以这里要异步进行
+		go func() {
+			p.AwaitPartner()
+			//p.SendQueue <- &MatchedNotify{"matched", p.Partner.ToJsonStruct()}
+			p.SendQueue <- &MatchedNotify{"reunion", p.Partner.ToJsonStruct()}
+		}()
+	}()
+
+	for {
+		select {
+		case inMsg := <-c.RecvQueue:
 			outMsg := &OutBoundMessage{}
 
 			// TODO: 有没有 switch 的必要？
@@ -180,86 +204,11 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 				outMsg.Message = inMsg.Message
 			}
 
-			client.Partner.SendQueue <- outMsg
+			// TODO: 确认是否会阻塞，而影响对断线的判断
+			c.Partner.SendQueue <- outMsg
+		case <-c.DisconnectionSignal:
+			return // 触发 defer
 		}
-	}()
-	defer func() {
-		locker.Lock()
-		onlineUsers--
-		delete(clientsPool, client)
-		locker.Unlock()
-		broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
-	}()
-
-	broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
-
-	// 匹配
-	// TODO: 处理在匹配未完成时下线的情况
-	if t, _ := redisClient.Get(client.Token).Result(); t != "" {
-		// 如果此人是之前断线的
-		log.Println("FOUND A HEARTBROKEN, WISHING TO FIND SOMEONE WITH TOKEN:", t)
-		lovelornQueue <- client
-		client.AwaitPartner() // 这是个阻塞的方法
-		client.SendQueue <- &MatchedNotify{"reunion", client.Partner.ToJsonStruct()}
-	} else {
-		// 如果此人是新来的
-		// 死锁可能性？
-		singleQueue <- client
-		client.AwaitPartner()
-		client.SendQueue <- &MatchedNotify{"matched", client.Partner.ToJsonStruct()}
-	}
-	defer func() {
-		// 要在这里，大做文章
-		// 目前只是我方掉线之后对方重新回到单身队列
-		// 但是我们的目标可不是这个！
-		//
-		// 我们把对方被动掉线后己方的状态称为失恋状态
-		// 掉线的一方称为原配
-		//
-		// TODO:
-		// * 区分主动下线与被动掉线
-		//
-		// 工作流:
-		// * 向掉线的人的 Partner 发送对方被动掉线的消息
-		// * partner 进入失恋队列，陷入等待状态，有几种情况
-		//   * partner 主动下线 -> 直接销毁匹配
-		//   * partner 被动掉线 -> 保留匹配，当一方上线时直接进入失恋状态
-		//   * 有新 client 的 Token 为刚刚掉线的人的 Token -> 直接匹配
-		partner := client.Partner
-		locker.Lock()
-		_, ok := clientsPool[partner]
-		locker.Unlock()
-		if !ok {
-			return
-		}
-		partner.Partner = nil
-		locker.Lock()
-		clientsPool[partner] = true
-		locker.Unlock()
-		//singleQueue <- partner
-		lovelornQueue <- partner
-		log.Println("WE HAVE A NEW LOVELORN HERE NOW, HIS TOKEN:", partner.Token)
-		// 因为下面的 Await 会阻塞，所以这里要异步进行
-		go func() {
-			partner.AwaitPartner()
-			//partner.SendQueue <- &MatchedNotify{"matched", partner.Partner.ToJsonStruct()}
-			partner.SendQueue <- &MatchedNotify{"reunion", partner.Partner.ToJsonStruct()}
-		}()
-	}()
-	// 现在这里只是简单地阻塞住
-	// TODO: 在收到断线信号的时候终止该函数，用 channel，这样才能保证连接并能在断线时触发 defer
-	<-make(chan bool)
-}
-
-func handleBroadcast() {
-	for {
-		outMsg := <-broadcast
-
-		locker.Lock()
-		for client := range clientsPool {
-			client.SendQueue <- outMsg
-		}
-		locker.Unlock()
 	}
 }
 
@@ -303,7 +252,7 @@ func matchingBus() {
 				}
 				bufferQueue = nil
 				if p != nil {
-					log.Println("MATCHED:", c.Token, p.Token)
+					log.Println("MATCHED:", c.Token, "<❤>", p.Token)
 					break
 				}
 				log.Println("P IS NIL")
@@ -314,19 +263,6 @@ func matchingBus() {
 
 		c.PartnerReceiver <- p
 		p.PartnerReceiver <- c
-
-		locker.Lock()
-		clientsPool[c], clientsPool[p] = false, false
-		locker.Unlock()
-
-		multi := redisClient.Pipeline()
-		multi.Set(c.Token, p.Token, time.Minute*2)
-		multi.Set(p.Token, c.Token, time.Minute*2)
-		if _, err := multi.Exec(); err != nil {
-			log.Println("REDIS ERROR:", err)
-			// ...
-		}
-		log.Println("SET IN REDIS:", c.Token, "<->", p.Token)
 	}
 }
 
@@ -349,9 +285,8 @@ func reunionBus() {
 			if !ok1 {
 				continue
 			}
-			log.Println("SOME FELLOW HERE")
+
 			if t, _ := redisClient.Get(c.Token).Result(); t == heartBroken.Token {
-				log.Println("HIS TOKEN SHOULD BE", t)
 				p = heartBroken
 			} else {
 				bufferQueue = append(bufferQueue, heartBroken)
@@ -367,7 +302,7 @@ func reunionBus() {
 				}
 				bufferQueue = nil
 				if p != nil {
-					log.Println("RE-MATCHED! CONGRATZ!")
+					log.Println("RE-MATCHED! CONGRATZ!", c.Token, "<❤>", p.Token)
 					break
 				}
 				log.Println("P IS NIL")
@@ -383,12 +318,12 @@ func reunionBus() {
 		locker.Unlock()
 
 		multi := redisClient.Pipeline()
-		multi.Set(c.Token, p.Token, time.Minute*2)
-		multi.Set(p.Token, c.Token, time.Minute*2)
+		multi.Del(c.Token)
+		multi.Del(p.Token)
 		if _, err := multi.Exec(); err != nil {
 			log.Println("REDIS ERROR:", err)
 			// ...
 		}
-		log.Println("SET/UPDATE IN REDIS:", c.Token, "<->", p.Token)
+		log.Println("REMOVED LOVELORN PAIR FROM REDIS:", c.Token, "<ღ>", p.Token)
 	}
 }
