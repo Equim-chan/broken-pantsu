@@ -14,7 +14,7 @@ $ go get -u github.com/Equim-chan/broken-pantsu
 or manually
 ```console
 $ git clone git@github.com:Equim-chan/broken-pantsu.git
-$ make love       # "love, rather than sorry" after all
+$ make
 $ ./broken-pantsu
 ```
 Build executable files for all platforms and archs
@@ -39,7 +39,6 @@ List of environment variables:
 | BP_REDIS_ADDR | localhost:6379 | The address of redis |
 | BP_REDIS_PASS | (empty) | The password of redis |
 | BP_REDIS_DB | 0 | The DB of redis |
-
 
 ## Dependencies
 We use [glide](https://github.com/Masterminds/glide) as package manager.

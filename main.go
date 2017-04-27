@@ -278,42 +278,46 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			case "typing":
 				c.Partner.SendQueue <- &OutBoundMessage{"typing", inMsg.Message}
 			case "offline":
-				c.Partner.SendQueue <- &OutBoundMessage{"switch", ""}
-				isInitiativeDisconnect = true
 				log.Println("INITIATIVE DISCONNECT FROM:", c.Token)
+				c.Partner.SendQueue <- &OutBoundMessage{"switch", ""}
+				c.Partner.GotSwitchedSignal <- 1
+
+				isInitiativeDisconnect = true
 
 				// TODO: 是否要检查 c.Partner 在不在连接池中
 				c.Partner.Partner = nil
 				singleQueue <- c.Partner
 				return
 			case "switch":
-				c.Partner.SendQueue <- &OutBoundMessage{"switch", ""}
 				log.Println("SWITCH IS TRIGGERED FOR:", c.Token)
+				c.Partner.SendQueue <- &OutBoundMessage{"switch", ""}
+				c.Partner.GotSwitchedSignal <- 1
 
-				p := c.Partner
-
-				// TODO: 是否要检查 c.Partner 在不在连接池中
 				c.Partner = nil
-				p.Partner = nil
-
 				singleQueue <- c
-				singleQueue <- p
 
-				// 目前这里还是个难题，c 和 p 不在一个 context 下，现在这个方案是不科学的！
-				for c.Partner == nil || p.Partner == nil {
-					select {
-					case c.Partner = <-c.PartnerReceiver:
-						break
-					case p.Partner = <-p.PartnerReceiver:
-						break
-					case <-c.DisconnectionSignal:
-						return
-					}
+				select {
+				case c.Partner = <-c.PartnerReceiver:
+					break
+				case <-c.DisconnectionSignal:
+					return
 				}
 
 				c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}
-				c.Partner.SendQueue <- &MatchedNotify{"matched", c.ToJsonStruct()}
 			}
+		case <-c.GotSwitchedSignal:
+			c.Partner = nil
+			singleQueue <- c
+
+			// TODO: 这个 select 可不可以移植到外层的那个 select 里
+			select {
+			case c.Partner = <-c.PartnerReceiver:
+				break
+			case <-c.DisconnectionSignal:
+				return
+			}
+
+			c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}
 		case s := <-c.DisconnectionSignal:
 			// 为了方便上面 defer 的 go func 里监听这个 channel 的 select
 			c.DisconnectionSignal <- s
