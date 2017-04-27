@@ -17,6 +17,7 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -51,7 +52,7 @@ var (
 	address     string
 	pubPath     string
 	queueCap    int
-	tokenAge    time.Duration
+	cookieAge   time.Duration
 	lovelornAge time.Duration
 	redisAddr   string
 	redisPass   string
@@ -98,12 +99,12 @@ func init() {
 	singleQueue = make(chan *Client, queueCap)
 	lovelornQueue = make(chan *Client, queueCap)
 
-	if e, ok := os.LookupEnv("BP_TOKEN_AGE"); ok {
-		if tokenAge, err = time.ParseDuration(e); err != nil {
-			panic("BP_TOKEN_AGE: " + err.Error())
+	if e, ok := os.LookupEnv("BP_COOKIE_AGE"); ok {
+		if cookieAge, err = time.ParseDuration(e); err != nil {
+			panic("BP_COOKIE_AGE: " + err.Error())
 		}
 	} else {
-		tokenAge = time.Hour * 168 // 24 * 7
+		cookieAge = time.Hour * 168 // 24 * 7
 	}
 
 	if e, ok := os.LookupEnv("BP_LOVELORN_AGE"); ok {
@@ -159,16 +160,27 @@ type applicantJSON struct {
 }
 
 func tokenDist(w http.ResponseWriter, r *http.Request) {
-	if _, err := r.Cookie("token"); err != nil {
-		token := uuid.NewV4().String()
-		exp := time.Now().Add(tokenAge)
+	if r.Method == "POST" {
+		// 其实就是帮客户端生成一下 cookie，原封不动的
+		if _, err := r.Cookie("form"); err != nil {
+			body, _ := ioutil.ReadAll(r.Body)
+			exp := time.Now().Add(cookieAge)
 
-		tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: exp}
-		http.SetCookie(w, tokenCookie)
-		log.Println("HANDOUT THE TOKEN:", token)
+			formCookie := &http.Cookie{Name: "form", Value: string(body), Expires: exp}
+			http.SetCookie(w, formCookie)
+		}
+	} else {
+		if _, err := r.Cookie("token"); err != nil {
+			token := uuid.NewV4().String()
+			exp := time.Now().Add(cookieAge)
+
+			tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: exp}
+			http.SetCookie(w, tokenCookie)
+			log.Println("HANDOUT THE TOKEN:", token)
+		}
+
+		http.ServeFile(w, r, filepath.Join(pubPath, "/index.html"))
 	}
-
-	http.ServeFile(w, r, filepath.Join(pubPath, "/index.html"))
 }
 
 func handleConnections(w http.ResponseWriter, r *http.Request) {

@@ -38,6 +38,19 @@ var util = (function(){
 })();
 
 $(function () {
+  $.ajax({
+    type: 'POST',
+    url: '/',
+    contentType: 'application/json; charset=utf-8',
+    data: encodeURI(JSON.stringify({
+      username: 'Equim',
+      gender: false,
+      likes: ['Identity', 'Yuri', 'identity', 'Loli', 'Schoolgirl', 'Vanilla', 'Loli', 'shit'],   // 大小写敏感
+      timezone: 8,
+      token: token
+    }))
+  });
+
   var token = util.readCookie('token');
   if (!token) {
     location.reload(true);
@@ -109,7 +122,7 @@ $(function () {
 
     ws.onclose = function () {
       alert('DISCONNECTED!');
-      // TODO: 重连机制
+      // TODO: 重连机制，但是要看情况！如果是服务器主动把连接断了怎么想都是你自己的原因嘛所以这种情况就不要重试了。
     };
   };
 });
