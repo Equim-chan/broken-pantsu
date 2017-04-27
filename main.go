@@ -198,8 +198,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	log.Println("CONNECTED:", c.Token)
 	c.SendQueue <- &OutBoundMessage{"approved", "Valid request."}
 
+	isInitiativeDisconnect := false
+
 	// 匹配
-	// TODO: 处理在匹配未完成时下线的情况
 	if t, _ := redisClient.Get(c.Token).Result(); t != "" {
 		// 如果此人是之前断线的
 		log.Println("FOUND A HEARTBROKEN WISHING TO FIND:", t)
@@ -224,19 +225,11 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() {
 		log.Println("DEFER IS TRIGGERED FOR:", c.Token)
-		// 要在这里，大做文章
-		// 目前只是我方掉线之后对方重新回到单身队列
-		// 但是我们的目标可不是这个！
-		//
-		// 我们把对方被动掉线后己方的状态称为失恋状态
-		// 掉线的一方称为原配
-		//
-		// 工作流:
-		// * 向掉线的人的 Partner 发送对方被动掉线的消息
-		// * partner 进入失恋队列，陷入等待状态，有几种情况
-		//   * partner 主动下线 -> 直接销毁匹配
-		//   * partner 被动掉线 -> 保留匹配，当一方上线时直接进入失恋状态
-		//   * 有新 client 的 Token 为刚刚掉线的人的 Token -> 直接匹配
+
+		if isInitiativeDisconnect || c.Partner == nil {
+			return
+		}
+
 		p := c.Partner
 
 		locker.Lock()
@@ -247,8 +240,8 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		}
 
 		p.Partner = nil
+		p.SendQueue <- &OutBoundMessage{"panic", ""}
 
-		// TODO: 在这里检测是否是主动下线，如果是被动下线则继续执行下面的
 		multi := redisClient.Pipeline()
 		multi.Set(c.Token, p.Token, lovelornAge)
 		multi.Set(p.Token, c.Token, lovelornAge)
@@ -258,7 +251,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Println("SET NEW LOVELORN PAIR IN REDIS:", c.Token, "<❤>", p.Token)
 
-		//singleQueue <- p
 		lovelornQueue <- p
 
 		// 因为下面的 Await 会阻塞而影响后面的 defer（其实也就个 ws.Close），所以这里要异步进行
@@ -272,7 +264,6 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 				log.Println("DISCONNECTED BEFORE RE-MATCHED")
 				return
 			}
-			//p.SendQueue <- &MatchedNotify{"matched", p.Partner.ToJsonStruct()}
 			p.SendQueue <- &MatchedNotify{"reunion", p.Partner.ToJsonStruct()}
 		}()
 	}()
@@ -280,24 +271,53 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case inMsg := <-c.RecvQueue:
-			outMsg := &OutBoundMessage{}
-
-			// TODO: 有没有 switch 的必要？
 			switch inMsg.Type {
 			case "chat":
-				outMsg.Type = "chat"
-				outMsg.Message = inMsg.Message
+				// TODO: 确认是否会阻塞，而影响对断线的判断
+				c.Partner.SendQueue <- &OutBoundMessage{"chat", inMsg.Message}
 			case "typing":
-				outMsg.Type = "typing"
-				outMsg.Message = inMsg.Message
-			}
+				c.Partner.SendQueue <- &OutBoundMessage{"typing", inMsg.Message}
+			case "offline":
+				c.Partner.SendQueue <- &OutBoundMessage{"switch", ""}
+				isInitiativeDisconnect = true
+				log.Println("INITIATIVE DISCONNECT FROM:", c.Token)
 
-			// TODO: 确认是否会阻塞，而影响对断线的判断
-			c.Partner.SendQueue <- outMsg
+				// TODO: 是否要检查 c.Partner 在不在连接池中
+				c.Partner.Partner = nil
+				singleQueue <- c.Partner
+				return
+			case "switch":
+				c.Partner.SendQueue <- &OutBoundMessage{"switch", ""}
+				log.Println("SWITCH IS TRIGGERED FOR:", c.Token)
+
+				p := c.Partner
+
+				// TODO: 是否要检查 c.Partner 在不在连接池中
+				c.Partner = nil
+				p.Partner = nil
+
+				singleQueue <- c
+				singleQueue <- p
+
+				// 目前这里还是个难题，c 和 p 不在一个 context 下，现在这个方案是不科学的！
+				for c.Partner == nil || p.Partner == nil {
+					select {
+					case c.Partner = <-c.PartnerReceiver:
+						break
+					case p.Partner = <-p.PartnerReceiver:
+						break
+					case <-c.DisconnectionSignal:
+						return
+					}
+				}
+
+				c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}
+				c.Partner.SendQueue <- &MatchedNotify{"matched", c.ToJsonStruct()}
+			}
 		case s := <-c.DisconnectionSignal:
 			// 为了方便上面 defer 的 go func 里监听这个 channel 的 select
 			c.DisconnectionSignal <- s
-			// 触发 defer
+			// 直接触发 defer
 			return
 		}
 	}

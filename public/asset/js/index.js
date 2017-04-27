@@ -37,6 +37,15 @@ var util = (function(){
   return _util;
 })();
 
+// THIS IS FOR TEST ONLY
+var ws;
+function sw() {
+  ws.send(JSON.stringify({
+    type: 'switch',
+    message: ''
+  }));
+}
+
 $(function () {
   var token = util.readCookie('token');
   if (!token) {
@@ -44,7 +53,7 @@ $(function () {
     return;
   }
   var wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/loveStream';
-  var ws = new WebSocket(wsUrl);
+  ws = new WebSocket(wsUrl);
   var typingTimer;
 
   ws.onopen = function () {
