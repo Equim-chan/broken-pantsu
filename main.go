@@ -66,9 +66,16 @@ var (
 )
 
 func init() {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println("INIT ERROR:", err)
+			os.Exit(1)
+		}
+	}()
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 
 	ok := false
+	var err error = nil
 
 	if address, ok = os.LookupEnv("BP_ADDR"); !ok {
 		address = "localhost:56833"
@@ -77,10 +84,14 @@ func init() {
 	if pubPath, ok = os.LookupEnv("BP_ROOT_PATH"); !ok {
 		pubPath = "./public"
 	}
-	pubPath, _ = filepath.Abs(pubPath)
+	if pubPath, err = filepath.Abs(pubPath); err != nil {
+		panic("BP_ROOT_PATH: " + err.Error())
+	}
 
 	if m, ok := os.LookupEnv("BP_QUEUE_CAP"); ok {
-		queueCap, _ = strconv.Atoi(m)
+		if queueCap, err = strconv.Atoi(m); err != nil {
+			panic("BP_QUEUE_CAP: " + err.Error())
+		}
 	} else {
 		queueCap = 1000
 	}
@@ -88,17 +99,19 @@ func init() {
 	lovelornQueue = make(chan *Client, queueCap)
 
 	if e, ok := os.LookupEnv("BP_TOKEN_AGE"); ok {
-		m, _ := strconv.Atoi(e)
-		tokenAge = time.Hour * time.Duration(m)
+		if tokenAge, err = time.ParseDuration(e); err != nil {
+			panic("BP_TOKEN_AGE: " + err.Error())
+		}
 	} else {
-		tokenAge = time.Hour * 24 * 7
+		tokenAge = time.Hour * 168 // 24 * 7
 	}
 
 	if e, ok := os.LookupEnv("BP_LOVELORN_AGE"); ok {
-		m, _ := strconv.Atoi(e)
-		lovelornAge = time.Minute * time.Duration(m)
+		if lovelornAge, err = time.ParseDuration(e); err != nil {
+			panic("BP_LOVELORN_AGE: " + err.Error())
+		}
 	} else {
-		lovelornAge = time.Minute * 60
+		lovelornAge = time.Minute * 90
 	}
 
 	if redisAddr, ok = os.LookupEnv("BP_REDIS_ADDR"); !ok {
@@ -110,7 +123,9 @@ func init() {
 	}
 
 	if d, ok := os.LookupEnv("BP_REDIS_DB"); ok {
-		redisDB, _ = strconv.Atoi(d)
+		if redisDB, err = strconv.Atoi(d); err != nil {
+			panic("BP_REDIS_DB: " + err.Error())
+		}
 	} else {
 		redisDB = 0
 	}
@@ -120,8 +135,8 @@ func init() {
 		Password: redisPass,
 		DB:       redisDB,
 	})
-	if err := redisClient.Ping().Err(); err != nil {
-		log.Fatalln("REDIS INIT ERROR:", err)
+	if err = redisClient.Ping().Err(); err != nil {
+		panic("REDIS INIT ERROR: " + err.Error())
 	}
 
 	go handleBroadcast()
