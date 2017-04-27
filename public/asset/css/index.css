@@ -37,6 +37,13 @@ form button {
 }
 
 #messages li {
+    font-size: 20px;
+    padding: 5px 10px;
+}
+
+.partner {
+    text-align: right;
+    font-size: 20px;
     padding: 5px 10px;
 }
 

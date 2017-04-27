@@ -58,10 +58,13 @@ $(function () {
     }));
 
     $('form').submit(function () {
+      var message = $('#m').val()
       ws.send(JSON.stringify({
         type: 'chat',
-        message: $('#m').val()
+        message: message
       }));
+      message = util.escapeHtml(message);
+      $('#messages').append($('<li class="self">').html(emojione.toImage(message)));
       $('#m').val('');
       return false;
     });
@@ -90,7 +93,7 @@ $(function () {
       switch (data.type) {
         case 'chat':
           var message = util.escapeHtml(data.message);
-          $('#messages').append($('<li>').html(emojione.toImage(message)));
+          $('#messages').append($('<li class="partner">').html(emojione.toImage(message)));
           break;
         case 'online users':
           console.log('online:', data.message);
