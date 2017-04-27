@@ -11,7 +11,7 @@ var likesList = [...]string{"Yuri", "Cosplay", "Crossdressing", "Cuddling", "Eye
 
 var (
 	onlineUsers = 0
-	clientsPool = make(map[*Client]bool) // true => not matched, false => matched
+	clientsPool = make(map[*Client]bool)
 	broadcast   = make(chan *OutBoundMessage, 10)
 )
 
@@ -25,13 +25,18 @@ type Identity struct {
 
 type Client struct {
 	*Identity
-	Conn                *websocket.Conn
-	DisconnectionSignal chan uint8 // uint8 备用作为信号类型
-	RecvQueue           chan *InBoundMessage
-	SendQueue           chan interface{}
-	Partner             *Client
-	PartnerReceiver     chan *Client
-	likesMask           uint64
+	likesMask uint64
+
+	Conn *websocket.Conn
+
+	DisconnectionSignal         chan uint8 // uint8 备用作为信号类型
+	internalDisconnectionSignal chan uint8
+
+	RecvQueue chan *InBoundMessage
+	SendQueue chan interface{}
+
+	Partner         *Client
+	PartnerReceiver chan *Client
 }
 
 type ClientJSON struct {
@@ -65,14 +70,15 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 	identity.Likes = sanitizedLikes
 
 	c := &Client{
-		Identity:            identity,
-		Conn:                conn,
-		DisconnectionSignal: make(chan uint8),
-		RecvQueue:           make(chan *InBoundMessage, 20),
-		SendQueue:           make(chan interface{}, 20),
-		Partner:             nil,
-		PartnerReceiver:     make(chan *Client),
-		likesMask:           likesMask,
+		Identity:                    identity,
+		likesMask:                   likesMask,
+		Conn:                        conn,
+		DisconnectionSignal:         make(chan uint8, 2),
+		internalDisconnectionSignal: make(chan uint8),
+		RecvQueue:                   make(chan *InBoundMessage, 20),
+		SendQueue:                   make(chan interface{}, 20),
+		Partner:                     nil,
+		PartnerReceiver:             make(chan *Client),
 	}
 	go c.runRecvQueue()
 	go c.runSendQueue()
@@ -130,7 +136,8 @@ func (c *Client) runRecvQueue() {
 			c.removeFromPool()
 
 			broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
-			c.DisconnectionSignal <- 1
+			c.internalDisconnectionSignal <- 1
+			c.DisconnectionSignal <- 1 // 设置 channel 缓冲长度为 2 就是为了这里不会阻塞住
 			// Conn 的回收由上层的 defer 负责
 			break
 		}
@@ -160,8 +167,8 @@ func (c *Client) runSendQueue() {
 				c.DisconnectionSignal <- 2
 				return
 			}
-		case <-c.DisconnectionSignal:
-			// 既然能收到这个信号，那么必定是从 runRecvQueue 或 runSendQueue 来的
+		case <-c.internalDisconnectionSignal:
+			// 既然能收到这个信号，那么必定是从 runRecvQueue 来的
 			// 所以就断言，已经做了 removeFromPool 的处理，这里只要回收这个 goroutine 就好
 			return
 		}
@@ -183,10 +190,6 @@ func (c *Client) LikesCount() uint8 {
 
 func (c *Client) SimilarityWith(p *Client) uint8 {
 	return c.parseMask(c.likesMask & p.likesMask)
-}
-
-func (c *Client) AwaitPartner() {
-	c.Partner = <-c.PartnerReceiver
 }
 
 func (c *Client) ToJsonStruct() *ClientJSON {

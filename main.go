@@ -32,9 +32,13 @@ type MatchedNotify struct {
 }
 
 var (
-	address     string
-	pubPath     string
-	maxQueueLen int
+	address   string
+	pubPath   string
+	queueCap  int
+	expires   time.Duration
+	redisAddr string
+	redisPass string
+	redisDB   int
 
 	redisClient *redis.Client
 
@@ -53,27 +57,47 @@ func init() {
 		address = "localhost:56833"
 	}
 
-	if pubPath, ok = os.LookupEnv("BP_PUB_PATH"); !ok {
+	if pubPath, ok = os.LookupEnv("BP_ROOT_PATH"); !ok {
 		pubPath = "./public"
 	}
 	pubPath, _ = filepath.Abs(pubPath)
 
-	if m, ok := os.LookupEnv("BP_MAX_QUEUE_LEN"); ok {
-		maxQueueLen, _ = strconv.Atoi(m)
+	if m, ok := os.LookupEnv("BP_QUEUE_CAP"); ok {
+		queueCap, _ = strconv.Atoi(m)
 	} else {
-		maxQueueLen = 20
+		queueCap = 20
 	}
-	singleQueue = make(chan *Client, maxQueueLen)
-	lovelornQueue = make(chan *Client, maxQueueLen)
+	singleQueue = make(chan *Client, queueCap)
+	lovelornQueue = make(chan *Client, queueCap)
 
-	// TODO: 从环境变量传入 redis 属性
+	if e, ok := os.LookupEnv("BP_SESSION_AGE"); ok {
+		m, _ := strconv.Atoi(e)
+		expires = time.Minute * time.Duration(m)
+	} else {
+		expires = time.Minute * 2
+	}
+
+	if redisAddr, ok = os.LookupEnv("BP_REDIS_ADDR"); !ok {
+		redisAddr = "localhost:6379"
+	}
+
+	if redisPass, ok = os.LookupEnv("BP_REDIS_PASS"); !ok {
+		redisPass = ""
+	}
+
+	if d, ok := os.LookupEnv("BP_REDIS_DB"); ok {
+		redisDB, _ = strconv.Atoi(d)
+	} else {
+		redisDB = 0
+	}
+
 	redisClient = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
+		Addr:     redisAddr,
+		Password: redisPass,
+		DB:       redisDB,
 	})
 	if err := redisClient.Ping().Err(); err != nil {
-		log.Fatalln("REDIS SETUP ERROR:", err)
+		log.Fatalln("REDIS INIT ERROR:", err)
 	}
 
 	go handleBroadcast()
@@ -112,16 +136,17 @@ func tokenDist(w http.ResponseWriter, r *http.Request) {
 func handleConnections(w http.ResponseWriter, r *http.Request) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Fatal(err)
+		w.Write([]byte(err.Error()))
+		return
 	}
 	defer ws.Close()
 
 	// 获取来自客户端的第一条消息，即自己的资料
-	// 只有这步是由 main.go 负责的，其余的收发均在 client.go 内
+	// 只有这步是由 main.go 负责的，因为这里还没有实例化 Client
+	// 实例化后的收发队列处理均在 client.go 内
 	var identity Identity
 	if err := ws.ReadJSON(&identity); err != nil || !identity.IsValid() {
 		ws.WriteJSON(&OutBoundMessage{"reject", "Malformed request."})
-		ws.Close()
 		return
 	}
 
@@ -135,12 +160,22 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		// 如果此人是之前断线的
 		log.Println("FOUND A HEARTBROKEN WISHING TO FIND:", t)
 		lovelornQueue <- c
-		c.AwaitPartner() // 这是个阻塞的方法
+		select {
+		case c.Partner = <-c.PartnerReceiver:
+			break
+		case <-c.DisconnectionSignal:
+			return
+		}
 		c.SendQueue <- &MatchedNotify{"reunion", c.Partner.ToJsonStruct()}
 	} else {
 		// 如果此人是新来的
 		singleQueue <- c
-		c.AwaitPartner()
+		select {
+		case c.Partner = <-c.PartnerReceiver:
+			break
+		case <-c.DisconnectionSignal:
+			return
+		}
 		c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}
 	}
 	defer func() {
@@ -171,13 +206,13 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 		// TODO: 在这里检测是否是主动下线，如果是被动下线则继续执行下面的
 		multi := redisClient.Pipeline()
-		multi.Set(c.Token, p.Token, time.Minute*2) // TODO: 这只是测试用，生产环境建议设置为 1~3 小时，视情况
-		multi.Set(p.Token, c.Token, time.Minute*2)
+		multi.Set(c.Token, p.Token, expires)
+		multi.Set(p.Token, c.Token, expires)
 		if _, err := multi.Exec(); err != nil {
 			log.Println("REDIS ERROR:", err)
 			// ...
 		}
-		log.Println("SET NEW LOVELORN PAIR IN REDIS:", c.Token, "<ღ>", p.Token)
+		log.Println("SET NEW LOVELORN PAIR IN REDIS:", c.Token, "<❤>", p.Token)
 
 		//singleQueue <- p
 		lovelornQueue <- p
@@ -186,7 +221,13 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		go func() {
 			// TODO: 处理在这个时候 p 断连的情况
 			// 可以换个想法，比如这时候把这个信号发给 p，就可以在 p 处处理，而不是在这个 defer 里处理了
-			p.AwaitPartner()
+			select {
+			case p.Partner = <-p.PartnerReceiver:
+				break
+			case <-p.DisconnectionSignal:
+				log.Println("DISCONNECTED BEFORE RE-MATCHED")
+				return
+			}
 			//p.SendQueue <- &MatchedNotify{"matched", p.Partner.ToJsonStruct()}
 			p.SendQueue <- &MatchedNotify{"reunion", p.Partner.ToJsonStruct()}
 		}()
@@ -209,8 +250,11 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 			// TODO: 确认是否会阻塞，而影响对断线的判断
 			c.Partner.SendQueue <- outMsg
-		case <-c.DisconnectionSignal:
-			return // 触发 defer
+		case s := <-c.DisconnectionSignal:
+			// 为了方便上面 defer 的 go func 里监听这个 channel 的 select
+			c.DisconnectionSignal <- s
+			// 触发 defer
+			return
 		}
 	}
 }
@@ -326,6 +370,6 @@ func reunionBus() {
 			log.Println("REDIS ERROR:", err)
 			// ...
 		}
-		log.Println("REMOVED LOVELORN PAIR FROM REDIS:", c.Token, "<ღ>", p.Token)
+		log.Println("REMOVED LOVELORN PAIR FROM REDIS:", c.Token, "<❤>", p.Token)
 	}
 }

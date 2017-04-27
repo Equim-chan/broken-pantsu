@@ -25,7 +25,7 @@ $ make release -j4
 
 Config can be passed via environment. Example:
 ```console
-$ BP_ADDR=:5543 BP_PUB_PATH=../dist BP_MAX_QUEUE_LEN=100 ./broken-pantsu
+$ BP_ADDR=:5543 BP_ROOT_PATH=../dist BP_QUEUE_CAP=100 ./broken-pantsu
 ```
 
 ## Dependencies
