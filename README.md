@@ -23,10 +23,23 @@ $ make release -j4
 ```
 > Running `make` with the `-j4` flag will cause it to run 4 compilation jobs concurrently which may significantly reduce build time. The number after `-j` can be changed to best suit the number of processor cores on your machine. If you run into problems running `make` with concurrency, try running it without the `-j4` flag. See the [GNU Make Documentation](https://www.gnu.org/software/make/manual/html_node/Parallel.html) for more information.
 
-Config can be passed via environment. Example:
+Config can be passed via environment variables. Example:
 ```console
 $ BP_ADDR=:5543 BP_ROOT_PATH=../dist BP_QUEUE_CAP=100 ./broken-pantsu
 ```
+List of environment variables:
+
+| Field | Default Value | Comment |
+| ----    | -------    | --- |
+| BP_ADDR | localhost:56833 | Where the application listens to (56833 means "loved") |
+| BP_ROOT_PATH | ./public | Where the static files are located. Relative path will be resolved into absolute path automatically |
+| BP_QUEUE_CAP | 1000 | The capacity of `singleQueue` and `lovelornQueue` |
+| BP_TOKEN_AGE | 168 | The age of token cookie, unit: __hour__ |
+| BP_LOVELORN_AGE | 60 | The age of lovelorn pairs stored in redis, unit: __minute__ |
+| BP_REDIS_ADDR | localhost:6379 | The address of redis |
+| BP_REDIS_PASS | (empty) | The password of redis |
+| BP_REDIS_DB | 0 | The DB of redis |
+
 
 ## Dependencies
 We use [glide](https://github.com/Masterminds/glide) as package manager.
@@ -57,7 +70,8 @@ There are lots of things to do at the moment...
 * [ ] check for XSS
 * [x] separate HTML, CSS and JS
 * [x] add browser-out-of-date warning
-* [ ] _add auto-reconnection after dc_
+* [ ] add auto-reconnection after dc
+* [ ] _add i18n support_
 
 ### Features
 * [ ] display "your partner is typing"

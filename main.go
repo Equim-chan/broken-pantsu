@@ -48,13 +48,14 @@ type MatchedNotify struct {
 }
 
 var (
-	address   string
-	pubPath   string
-	queueCap  int
-	expires   time.Duration
-	redisAddr string
-	redisPass string
-	redisDB   int
+	address     string
+	pubPath     string
+	queueCap    int
+	tokenAge    time.Duration
+	lovelornAge time.Duration
+	redisAddr   string
+	redisPass   string
+	redisDB     int
 
 	redisClient *redis.Client
 
@@ -81,16 +82,23 @@ func init() {
 	if m, ok := os.LookupEnv("BP_QUEUE_CAP"); ok {
 		queueCap, _ = strconv.Atoi(m)
 	} else {
-		queueCap = 20
+		queueCap = 1000
 	}
 	singleQueue = make(chan *Client, queueCap)
 	lovelornQueue = make(chan *Client, queueCap)
 
-	if e, ok := os.LookupEnv("BP_SESSION_AGE"); ok {
+	if e, ok := os.LookupEnv("BP_TOKEN_AGE"); ok {
 		m, _ := strconv.Atoi(e)
-		expires = time.Minute * time.Duration(m)
+		tokenAge = time.Hour * time.Duration(m)
 	} else {
-		expires = time.Minute * 2
+		tokenAge = time.Hour * 24 * 7
+	}
+
+	if e, ok := os.LookupEnv("BP_LOVELORN_AGE"); ok {
+		m, _ := strconv.Atoi(e)
+		lovelornAge = time.Minute * time.Duration(m)
+	} else {
+		lovelornAge = time.Minute * 60
 	}
 
 	if redisAddr, ok = os.LookupEnv("BP_REDIS_ADDR"); !ok {
@@ -138,10 +146,9 @@ type applicantJSON struct {
 func tokenDist(w http.ResponseWriter, r *http.Request) {
 	if _, err := r.Cookie("token"); err != nil {
 		token := uuid.NewV4().String()
-		exp := time.Second * 20
-		expStamp := time.Now().Add(exp)
+		exp := time.Now().Add(tokenAge)
 
-		tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: expStamp}
+		tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: exp}
 		http.SetCookie(w, tokenCookie)
 		log.Println("HANDOUT THE TOKEN:", token)
 	}
@@ -164,11 +171,17 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	if err := ws.ReadJSON(&identity); err != nil || !identity.IsValid() {
 		ws.WriteJSON(&OutBoundMessage{"reject", "Malformed request."})
 		return
+	} else if exist, _ := redisClient.SIsMember("online", identity.Token).Result(); exist {
+		ws.WriteJSON(&OutBoundMessage{"reject", "Sorry but you can't be a playboy."})
+		return
 	}
+	redisClient.SAdd("online", identity.Token)
+	defer redisClient.SRem("online", identity.Token)
 
 	// 根据客户端身份定义 client 对象
 	c := NewClient(ws, &identity)
 	log.Println("CONNECTED:", c.Token)
+	c.SendQueue <- &OutBoundMessage{"approved", "Valid request."}
 
 	// 匹配
 	// TODO: 处理在匹配未完成时下线的情况
@@ -222,8 +235,8 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 		// TODO: 在这里检测是否是主动下线，如果是被动下线则继续执行下面的
 		multi := redisClient.Pipeline()
-		multi.Set(c.Token, p.Token, expires)
-		multi.Set(p.Token, c.Token, expires)
+		multi.Set(c.Token, p.Token, lovelornAge)
+		multi.Set(p.Token, c.Token, lovelornAge)
 		if _, err := multi.Exec(); err != nil {
 			log.Println("REDIS ERROR:", err)
 			// ...

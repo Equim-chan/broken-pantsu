@@ -1,6 +1,6 @@
 if (!window.WebSocket) {
   alert('Sorry, your browser is too old to run Broken Pantsu!\nPlease use a morden browser that supports WebSocket.');
-  location.href = 'http://outdatedbrowser.com'
+  location.href = 'http://outdatedbrowser.com';
 }
 
 var util = (function(){
@@ -19,7 +19,7 @@ var util = (function(){
 
   _util.escapeHtml = function (string) {
     return String(string).replace(/[&<>"'`=\/]/g, function (s) {
-      return util.entityMap[s];
+      return entityMap[s];
     });
   };
 

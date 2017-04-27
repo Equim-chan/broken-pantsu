@@ -26,3 +26,4 @@ _testmain.go
 release/
 tmp/
 vendor/
+eq.bat
