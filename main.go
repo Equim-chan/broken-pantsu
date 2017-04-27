@@ -17,7 +17,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -160,27 +159,16 @@ type applicantJSON struct {
 }
 
 func tokenDist(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
-		// 其实就是帮客户端生成一下 cookie，原封不动的
-		if _, err := r.Cookie("form"); err != nil {
-			body, _ := ioutil.ReadAll(r.Body)
-			exp := time.Now().Add(cookieAge)
+	if _, err := r.Cookie("token"); err != nil {
+		token := uuid.NewV4().String()
+		exp := time.Now().Add(cookieAge)
 
-			formCookie := &http.Cookie{Name: "form", Value: string(body), Expires: exp}
-			http.SetCookie(w, formCookie)
-		}
-	} else {
-		if _, err := r.Cookie("token"); err != nil {
-			token := uuid.NewV4().String()
-			exp := time.Now().Add(cookieAge)
-
-			tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: exp}
-			http.SetCookie(w, tokenCookie)
-			log.Println("HANDOUT THE TOKEN:", token)
-		}
-
-		http.ServeFile(w, r, filepath.Join(pubPath, "/index.html"))
+		tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: exp}
+		http.SetCookie(w, tokenCookie)
+		log.Println("HANDOUT THE TOKEN:", token)
 	}
+
+	http.ServeFile(w, r, filepath.Join(pubPath, "/index.html"))
 }
 
 func handleConnections(w http.ResponseWriter, r *http.Request) {

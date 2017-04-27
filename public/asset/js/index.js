@@ -38,19 +38,6 @@ var util = (function(){
 })();
 
 $(function () {
-  $.ajax({
-    type: 'POST',
-    url: '/',
-    contentType: 'application/json; charset=utf-8',
-    data: encodeURI(JSON.stringify({
-      username: 'Equim',
-      gender: false,
-      likes: ['Identity', 'Yuri', 'identity', 'Loli', 'Schoolgirl', 'Vanilla', 'Loli', 'shit'],   // 大小写敏感
-      timezone: 8,
-      token: token
-    }))
-  });
-
   var token = util.readCookie('token');
   if (!token) {
     location.reload(true);
