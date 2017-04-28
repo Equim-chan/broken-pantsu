@@ -41,10 +41,8 @@ form button {
     padding: 5px 10px;
 }
 
-.partner {
+.self {
     text-align: right;
-    font-size: 20px;
-    padding: 5px 10px;
 }
 
 #messages li:nth-child(odd) {

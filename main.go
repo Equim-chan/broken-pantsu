@@ -230,44 +230,17 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		p := c.Partner
-
 		locker.Lock()
-		_, ok := clientsPool[p]
+		_, ok := clientsPool[c.Partner]
 		locker.Unlock()
 		if !ok {
 			return
 		}
 
-		p.Partner = nil
-		p.SendQueue <- &OutBoundMessage{"panic", ""}
-
-		multi := redisClient.Pipeline()
-		multi.Set(c.Token, p.Token, lovelornAge)
-		multi.Set(p.Token, c.Token, lovelornAge)
-		if _, err := multi.Exec(); err != nil {
-			log.Println("REDIS ERROR:", err)
-			// ...
-		}
-		log.Println("SET NEW LOVELORN PAIR IN REDIS:", c.Token, "<❤>", p.Token)
-
-		lovelornQueue <- p
-
-		// 因为下面的 Await 会阻塞而影响后面的 defer（其实也就个 ws.Close），所以这里要异步进行
-		go func() {
-			// TODO: 处理在这个时候 p 断连的情况
-			// 可以换个想法，比如这时候把这个信号发给 p，就可以在 p 处处理，而不是在这个 defer 里处理了
-			select {
-			case p.Partner = <-p.PartnerReceiver:
-				break
-			case <-p.DisconnectionSignal:
-				log.Println("DISCONNECTED BEFORE RE-MATCHED")
-				return
-			}
-			p.SendQueue <- &MatchedNotify{"reunion", p.Partner.ToJsonStruct()}
-		}()
+		c.Partner.HeartbrokenSignal <- 1
 	}()
 
+	// This is like an event loop
 	for {
 		select {
 		case inMsg := <-c.RecvQueue:
@@ -305,6 +278,35 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 				c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}
 			}
+
+		case <-c.HeartbrokenSignal:
+			p := c.Partner
+			c.Partner = nil
+
+			c.SendQueue <- &OutBoundMessage{"panic", ""}
+
+			multi := redisClient.Pipeline()
+			multi.Set(c.Token, p.Token, lovelornAge)
+			multi.Set(p.Token, c.Token, lovelornAge)
+			if _, err := multi.Exec(); err != nil {
+				log.Println("REDIS ERROR:", err)
+				// ...
+			}
+			log.Println("SET NEW LOVELORN PAIR IN REDIS:", c.Token, "<❤>", p.Token)
+
+			p = nil
+			lovelornQueue <- c
+
+			select {
+			case c.Partner = <-c.PartnerReceiver:
+				break
+			case <-c.DisconnectionSignal:
+				log.Println("DISCONNECTED BEFORE RE-MATCHED")
+				return
+			}
+
+			c.SendQueue <- &MatchedNotify{"reunion", c.Partner.ToJsonStruct()}
+
 		case <-c.GotSwitchedSignal:
 			c.Partner = nil
 			singleQueue <- c
@@ -318,9 +320,8 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			}
 
 			c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}
-		case s := <-c.DisconnectionSignal:
-			// 为了方便上面 defer 的 go func 里监听这个 channel 的 select
-			c.DisconnectionSignal <- s
+
+		case <-c.DisconnectionSignal:
 			// 直接触发 defer
 			return
 		}

@@ -47,6 +47,7 @@ type Client struct {
 
 	DisconnectionSignal         chan uint8 // uint8 备用作为信号类型
 	internalDisconnectionSignal chan uint8
+	HeartbrokenSignal           chan uint8
 	GotSwitchedSignal           chan uint8
 
 	RecvQueue chan *InBoundMessage
@@ -90,8 +91,9 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 		Identity:                    identity,
 		likesMask:                   likesMask,
 		Conn:                        conn,
-		DisconnectionSignal:         make(chan uint8, 2),
+		DisconnectionSignal:         make(chan uint8),
 		internalDisconnectionSignal: make(chan uint8),
+		HeartbrokenSignal:           make(chan uint8),
 		GotSwitchedSignal:           make(chan uint8),
 		RecvQueue:                   make(chan *InBoundMessage, 20),
 		SendQueue:                   make(chan interface{}, 20),

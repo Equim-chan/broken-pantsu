@@ -55,7 +55,7 @@ There are lots of things to do at the moment...
 * [ ] add session support (in age of 3 hours)
 * [x] enforce matching algorithm
 * [ ] check for thread safety
-* [ ] check for memory leak possibility
+* [ ] check for possible memory leak
 * [x] setup travis CI
 * [x] migrate build_all into Makefile
 * [ ] add test suite
