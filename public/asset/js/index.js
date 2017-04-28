@@ -37,7 +37,7 @@ var util = (function(){
   return _util;
 })();
 
-// THIS IS FOR TEST ONLY
+// THIS PART IS FOR TEST ONLY
 var ws;
 function sw() {
   ws.send(JSON.stringify({
@@ -45,6 +45,7 @@ function sw() {
     msg: ''
   }));
 }
+// //////////////////////////
 
 $(function () {
   var token = util.readCookie('token');
@@ -57,7 +58,7 @@ $(function () {
   var typingTimer;
 
   ws.onopen = function () {
-    // 注册
+    // register
     ws.send(JSON.stringify({
       username: 'Equim',
       gender: false,
@@ -117,7 +118,8 @@ $(function () {
 
     ws.onclose = function () {
       alert('DISCONNECTED!');
-      // TODO: 重连机制，但是要看情况！如果是服务器主动把连接断了怎么想都是你自己的原因嘛所以这种情况就不要重试了。
+      // TODO: auto-reconnection, but depends on the circumstance. If the disconnection is caused initiatively
+      // by the server, then it must be your own reason and there's no need to retry again :)
     };
   };
 });

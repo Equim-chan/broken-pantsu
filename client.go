@@ -41,11 +41,11 @@ type Identity struct {
 
 type Client struct {
 	*Identity
-	likesMask uint64
+	likesFlag uint64
 
 	Conn *websocket.Conn
 
-	DisconnectionSignal         chan uint8 // uint8 备用作为信号类型
+	DisconnectionSignal         chan uint8 // uint8 is reserved for indicating signal types
 	internalDisconnectionSignal chan uint8
 	HeartbrokenSignal           chan uint8
 	GotSwitchedSignal           chan uint8
@@ -66,10 +66,10 @@ type ClientJSON struct {
 }
 
 func NewClient(conn *websocket.Conn, identity *Identity) *Client {
-	var likesMask uint64 = 0
+	var likesFlag uint64 = 0
 	sanitizedLikes := []string{}
 
-	// 将输入过滤，并得到 likesMask
+	// filter the input and get likesFlag
 	for _, item := range identity.Likes {
 		var mask uint64 = 0
 		for pos, value := range likesList {
@@ -79,9 +79,9 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 			}
 		}
 		if mask != 0 {
-			if t := likesMask | mask; t != likesMask {
+			if t := likesFlag | mask; t != likesFlag {
 				sanitizedLikes = append(sanitizedLikes, item)
-				likesMask = t
+				likesFlag = t
 			}
 		}
 	}
@@ -89,7 +89,7 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 
 	c := &Client{
 		Identity:                    identity,
-		likesMask:                   likesMask,
+		likesFlag:                   likesFlag,
 		Conn:                        conn,
 		DisconnectionSignal:         make(chan uint8),
 		internalDisconnectionSignal: make(chan uint8),
@@ -100,6 +100,7 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 		Partner:                     nil,
 		PartnerReceiver:             make(chan *Client),
 	}
+
 	go c.runRecvQueue()
 	go c.runSendQueue()
 
@@ -144,8 +145,8 @@ func (c *Client) removeFromPool() {
 	locker.Unlock()
 }
 
-// 保证不会出现并发读
-// 注意，这个函数不会接管身份验证，只在匹配成功后有效
+// this function can guarantee no concurrent read from the same Conn
+// note that this function will not handle "Indentity" messages, and works only after matched
 func (c *Client) runRecvQueue() {
 	for {
 		var inMsg InBoundMessage
@@ -157,23 +158,23 @@ func (c *Client) runRecvQueue() {
 
 			broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 			c.internalDisconnectionSignal <- 1
-			c.DisconnectionSignal <- 1 // 设置 channel 缓冲长度为 2 就是为了这里不会阻塞住
-			// Conn 的回收由上层的 defer 负责
+			c.DisconnectionSignal <- 1
+			// the deconstruction of Conn is handled by the outter defer func
 			break
 		}
 
 		if c.Partner == nil {
-			// 默认会把匹配前发送的包丢弃
+			// messages sent before matched are dropped by default
 			continue
 		}
 
-		// 将消息暴露给外部处理
+		// expose the message to outter process
 		c.RecvQueue <- &inMsg
 	}
 }
 
-// 保证不会出现并发写
-// outMsg 的类型是 interface{}，所以可以发送的对象类型不一定要是 OutBoundMessage
+// this function can guarantee no concurrent write to the same Conn
+// the type of outMsg is interface{}, therefore the object to be sent is not restricted to OutBoundMessage
 func (c *Client) runSendQueue() {
 	for {
 		select {
@@ -188,8 +189,9 @@ func (c *Client) runSendQueue() {
 				return
 			}
 		case <-c.internalDisconnectionSignal:
-			// 既然能收到这个信号，那么必定是从 runRecvQueue 来的
-			// 所以就断言，已经做了 removeFromPool 的处理，这里只要回收这个 goroutine 就好
+			// now that we received this signal, then it must be from runRecvQueue
+			// therefore we assert that c.removeFromPool() has already been called
+			// and what we need to do here is just destroying this goroutine
 			return
 		}
 	}
@@ -205,11 +207,11 @@ func (c *Client) parseMask(f uint64) uint8 {
 }
 
 func (c *Client) LikesCount() uint8 {
-	return c.parseMask(c.likesMask)
+	return c.parseMask(c.likesFlag)
 }
 
 func (c *Client) SimilarityWith(p *Client) uint8 {
-	return c.parseMask(c.likesMask & p.likesMask)
+	return c.parseMask(c.likesFlag & p.likesFlag)
 }
 
 func (c *Client) ToJsonStruct() *ClientJSON {

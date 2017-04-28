@@ -10,6 +10,7 @@
 ## Setup
 ```console
 $ go get -u github.com/Equim-chan/broken-pantsu
+$ $GOPATH/bin/broken-pantsu
 ```
 or manually
 ```console

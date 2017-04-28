@@ -172,9 +172,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
-	// 获取来自客户端的第一条消息，即自己的资料
-	// 只有这步是由 main.go 负责的，因为这里还没有实例化 Client
-	// 实例化后的收发队列处理均在 client.go 内
+	// read the first message from client, ie. the identity(profile)
+	// only this read is handled by main.go, as Client is not instantiated yet
+	// after the instantiation, reading and sending will be handled by client.go
 	var identity Identity
 	if err := ws.ReadJSON(&identity); err != nil || !identity.IsValid() {
 		ws.WriteJSON(&OutBoundMessage{"reject", "Malformed request."})
@@ -186,16 +186,16 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	redisClient.SAdd("online", identity.Token)
 	defer redisClient.SRem("online", identity.Token)
 
-	// 根据客户端身份定义 client 对象
+	// instantiate Client object according to the identity
 	c := NewClient(ws, &identity)
 	log.Println("CONNECTED:", c.Token)
 	c.SendQueue <- &OutBoundMessage{"approved", "Valid request."}
 
 	isInitiativeDisconnect := false
 
-	// 匹配
+	// MATCHING
 	if t, _ := redisClient.Get(c.Token).Result(); t != "" {
-		// 如果此人是之前断线的
+		// if this client is from a previously unexpectedly disconnected match
 		log.Println("FOUND A HEARTBROKEN WISHING TO FIND:", t)
 		lovelornQueue <- c
 		select {
@@ -206,7 +206,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		}
 		c.SendQueue <- &MatchedNotify{"reunion", c.Partner.ToJsonStruct()}
 	} else {
-		// 如果此人是新来的
+		// if this client is new
 		singleQueue <- c
 		select {
 		case c.Partner = <-c.PartnerReceiver:
@@ -233,13 +233,12 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 		c.Partner.HeartbrokenSignal <- 1
 	}()
 
-	// This is like an event loop
+	// it serves as an event loop here
 	for {
 		select {
 		case inMsg := <-c.RecvQueue:
 			switch inMsg.Type {
 			case "chat":
-				// TODO: 确认是否会阻塞，而影响对断线的判断
 				c.Partner.SendQueue <- &OutBoundMessage{"chat", inMsg.Message}
 			case "typing":
 				c.Partner.SendQueue <- &OutBoundMessage{"typing", inMsg.Message}
@@ -250,7 +249,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 				isInitiativeDisconnect = true
 
-				// TODO: 是否要检查 c.Partner 在不在连接池中
+				// TODO: make sure whether to check c.Partner is in clientsPool or not
 				c.Partner.Partner = nil
 				singleQueue <- c.Partner
 				return
@@ -304,7 +303,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			c.Partner = nil
 			singleQueue <- c
 
-			// TODO: 这个 select 可不可以移植到外层的那个 select 里
+			// TODO: can we migrate this select to the outter select?
 			select {
 			case c.Partner = <-c.PartnerReceiver:
 				break
@@ -315,7 +314,7 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}
 
 		case <-c.DisconnectionSignal:
-			// 直接触发 defer
+			// trigger defer directly
 			return
 		}
 	}
@@ -324,14 +323,15 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 func matchingBus() {
 	bufferQueue := []*Client{}
 	for {
-		// TODO: 考虑更苛刻的条件，比如 maxSim < 3
-		c := <-singleQueue // c主动，p被动
+		// TODO: consider a more rigor condition, for example sim >= 3
+		// c is initialtive and p is passive
+		c := <-singleQueue
 		var p *Client = nil
 		var maxSim uint8 = 0
 		for {
 			someSingle := <-singleQueue
 
-			// 这里会检查两者中有没有其中哪个在等待的过程中下线了
+			// it will check if one of them is disconnected while waiting for matching
 			locker.Lock()
 			_, ok0 := clientsPool[c]
 			_, ok1 := clientsPool[someSingle]
@@ -345,7 +345,8 @@ func matchingBus() {
 			}
 
 			sim := c.SimilarityWith(someSingle)
-			// 匹配相似度最高的。如果遇到相似度相同的，则匹配对方喜好数最小的
+			// match the one with the highest similarity
+			// if there are many with the same similarity, then match the one who has the least likes
 			if sim > maxSim || sim == maxSim && maxSim > 0 && someSingle.LikesCount() < p.LikesCount() {
 				p = someSingle
 				maxSim = sim
@@ -354,9 +355,9 @@ func matchingBus() {
 			bufferQueue = append(bufferQueue, someSingle)
 
 			if len(singleQueue) <= 0 {
-				// 把 buffer 给 dump 出来
+				// dump the buffer
 				for _, v := range bufferQueue {
-					// p可能为nil，也可能为匹配到的人
+					// p may be either nil or the matched one
 					if p != v {
 						singleQueue <- v
 					}
@@ -377,7 +378,6 @@ func matchingBus() {
 	}
 }
 
-// 力挽狂澜
 func reunionBus() {
 	bufferQueue := []*Client{}
 	for {
@@ -405,9 +405,7 @@ func reunionBus() {
 			}
 
 			if len(lovelornQueue) <= 0 {
-				// 把 buffer 给 dump 出来
 				for _, v := range bufferQueue {
-					// p可能为nil，也可能为匹配到的人
 					if p != v {
 						lovelornQueue <- v
 					}
