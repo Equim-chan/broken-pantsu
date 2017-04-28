@@ -26,9 +26,8 @@ import (
 var likesList = [...]string{"Yuri", "Cosplay", "Crossdressing", "Cuddling", "Eyebrows", "Fangs", "Fantasy", "Futanari", "Genderbend", "Glasses", "Hentai", "Holding Hands", "Horror", "Housewife", "Humiliation", "Idol", "Incest", "Loli", "Maid", "Miko", "Monster Girl", "Muscles", "Netorare", "Nurse", "Office Lady", "Oppai", "Schoolgirl", "Sci-Fi", "Shota", "Slice-of-Life", "Socks", "Spread", "Stockings", "Swimsuit", "Teacher", "Tentacles", "Tomboy", "Tsundere", "Vanilla", "Warm Smiles", "Western", "Yandere", "Yaoi", "Yukata"} // len = 43
 
 var (
-	onlineUsers = 0
-	clientsPool = make(map[*Client]bool)
-	broadcast   = make(chan *OutBoundMessage, 10)
+	onlineUsers uint64 = 0
+	clientsPool        = make(map[*Client]bool)
 )
 
 type Identity struct {
@@ -106,21 +105,7 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 
 	c.addToPool()
 
-	broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
-
 	return c
-}
-
-func handleBroadcast() {
-	for {
-		outMsg := <-broadcast
-
-		locker.Lock()
-		for c := range clientsPool {
-			c.SendQueue <- outMsg
-		}
-		locker.Unlock()
-	}
 }
 
 func (i *Identity) IsValid() bool {
@@ -133,9 +118,10 @@ func (i *Identity) IsValid() bool {
 
 func (c *Client) addToPool() {
 	locker.Lock()
-	onlineUsers++
 	clientsPool[c] = true
+	onlineUsers++
 	locker.Unlock()
+	broadcast <- &OutBoundMessage{"online users", strconv.FormatUint(onlineUsers, 10)}
 }
 
 func (c *Client) removeFromPool() {
@@ -143,6 +129,7 @@ func (c *Client) removeFromPool() {
 	delete(clientsPool, c)
 	onlineUsers--
 	locker.Unlock()
+	broadcast <- &OutBoundMessage{"online users", strconv.FormatUint(onlineUsers, 10)}
 }
 
 // this function can guarantee no concurrent read from the same Conn
@@ -156,7 +143,6 @@ func (c *Client) runRecvQueue() {
 
 			c.removeFromPool()
 
-			broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 			c.internalDisconnectionSignal <- 1
 			c.DisconnectionSignal <- 1
 			// the deconstruction of Conn is handled by the outter defer func
@@ -184,7 +170,6 @@ func (c *Client) runSendQueue() {
 
 				c.removeFromPool()
 
-				broadcast <- &OutBoundMessage{"online users", strconv.Itoa(onlineUsers)}
 				c.DisconnectionSignal <- 2
 				return
 			}
