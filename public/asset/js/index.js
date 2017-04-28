@@ -42,7 +42,7 @@ var ws;
 function sw() {
   ws.send(JSON.stringify({
     type: 'switch',
-    message: ''
+    msg: ''
   }));
 }
 
@@ -70,7 +70,7 @@ $(function () {
       var message = $('#m').val()
       ws.send(JSON.stringify({
         type: 'chat',
-        message: message
+        msg: message
       }));
       message = util.escapeHtml(message);
       $('#messages').append($('<li class="self">').html(emojione.toImage(message)));
@@ -81,7 +81,7 @@ $(function () {
     function stoppedTyping() {
       ws.send(JSON.stringify({
         type: 'typing',
-        message: 'false'
+        msg: 'false'
       }));
     }
 
@@ -92,7 +92,7 @@ $(function () {
 
       ws.send(JSON.stringify({
         type: 'typing',
-        message: 'true'
+        msg: 'true'
       }));
     });
 
@@ -101,17 +101,16 @@ $(function () {
       var data = JSON.parse(e.data);
       switch (data.type) {
         case 'chat':
-          var message = util.escapeHtml(data.message);
+          var message = util.escapeHtml(data.msg);
           $('#messages').append($('<li class="partner">').html(emojione.toImage(message)));
           break;
         case 'online users':
-          console.log('online:', data.message);
+          console.log('online:', data.msg);
           break;
         case 'matched':
-          console.log(data.partnerInfo);
           break;
         case 'reject':
-          alert(data.message);
+          alert(data.msg);
           break;
       }
     };

@@ -34,13 +34,10 @@ import (
 
 type InBoundMessage struct {
 	Type    string `json:"type"`
-	Message string `json:"message"`
+	Message string `json:"msg"`
 }
 
-type OutBoundMessage struct {
-	Type    string `json:"type"`
-	Message string `json:"message"`
-}
+type OutBoundMessage InBoundMessage
 
 type MatchedNotify struct {
 	Type    string      `json:"type"`
@@ -93,7 +90,7 @@ func init() {
 			panic("BP_QUEUE_CAP: " + err.Error())
 		}
 	} else {
-		queueCap = 1000
+		queueCap = 300
 	}
 	singleQueue = make(chan *Client, queueCap)
 	lovelornQueue = make(chan *Client, queueCap)
@@ -152,10 +149,6 @@ func main() {
 	log.Println("Serving at " + address + ", GOOD LUCK!")
 	log.Println("http://" + address)
 	log.Fatal(http.ListenAndServe(address, nil))
-}
-
-type applicantJSON struct {
-	Likes []string `json:"likes"`
 }
 
 func tokenDist(w http.ResponseWriter, r *http.Request) {
