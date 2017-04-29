@@ -18,7 +18,6 @@ package main
 
 import (
 	"log"
-	"net/http"
 
 	"github.com/gorilla/websocket"
 )
@@ -37,7 +36,6 @@ type MatchedNotify struct {
 
 var (
 	broadcast = make(chan *OutBoundMessage, 10)
-	upgrader  = websocket.Upgrader{}
 )
 
 func handleBroadcast() {
@@ -52,14 +50,7 @@ func handleBroadcast() {
 	}
 }
 
-func handleConnections(w http.ResponseWriter, r *http.Request) {
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		w.Write([]byte(err.Error()))
-		return
-	}
-	defer ws.Close()
-
+func handleConnections(ws *websocket.Conn) {
 	// read the first message from client, ie. the identity(profile)
 	// only this read is handled by main.go, as Client is not instantiated yet
 	// after the instantiation, reading and sending will be handled by client.go

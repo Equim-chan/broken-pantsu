@@ -62,6 +62,7 @@ func init() {
 		address = "localhost:56833"
 	}
 
+	// used in controller.go
 	if pubPath, ok = os.LookupEnv("BP_ROOT_PATH"); !ok {
 		pubPath = "./public"
 	}
@@ -124,20 +125,11 @@ func init() {
 	go handleBroadcast() // declared in conn.go
 	go matchBus()        // declared in match.go
 	go reunionBus()      // declared in match.go
+
+	registerHandlersToDefaultMux() // declared in controller.go
 }
 
 func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		tokenDist(w, r)
-		http.ServeFile(w, r, filepath.Join(pubPath, "/index.html"))
-	})
-	http.HandleFunc("/loveStream", handleConnections)
-	http.Handle("/asset/", http.FileServer(http.Dir(pubPath)))
-
 	log.Println("Serving at " + address + ", GOOD LUCK!")
 	log.Println("http://" + address)
 	log.Fatal(http.ListenAndServe(address, nil))

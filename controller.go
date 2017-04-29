@@ -18,12 +18,31 @@ package main
 
 import (
 	"net/http"
+	"path/filepath"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/satori/go.uuid"
 )
 
-func tokenDist(w http.ResponseWriter, r *http.Request) {
+var (
+	handleStatic = http.FileServer(http.Dir(pubPath))
+	upgrader     = websocket.Upgrader{}
+)
+
+func registerHandlersToDefaultMux() {
+	http.HandleFunc("/", handleRoot)
+	http.HandleFunc("/loveStream", handleLove)
+	// in production, static files are better to be handled by other server application (Caddy in this case)
+	http.Handle("/asset/", handleStatic)
+}
+
+func handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.ServeFile(w, r, filepath.Join(pubPath, "/404.html"))
+		return
+	}
+
 	if _, err := r.Cookie("token"); err != nil {
 		token := uuid.NewV4().String()
 		exp := time.Now().Add(cookieAge)
@@ -31,4 +50,18 @@ func tokenDist(w http.ResponseWriter, r *http.Request) {
 		tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: exp}
 		http.SetCookie(w, tokenCookie)
 	}
+
+	http.ServeFile(w, r, filepath.Join(pubPath, "/index.html"))
+}
+
+func handleLove(w http.ResponseWriter, r *http.Request) {
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	handleConnections(ws)
+
+	ws.Close()
 }
