@@ -32,7 +32,6 @@ import (
 
 var (
 	address     string
-	pubPath     string
 	queueCap    int
 	cookieAge   time.Duration
 	lovelornAge time.Duration
@@ -63,38 +62,33 @@ func init() {
 	}
 
 	// used in controller.go
-	if pubPath, ok = os.LookupEnv("BP_ROOT_PATH"); !ok {
-		pubPath = "./public"
+	if staticPath, ok = os.LookupEnv("BP_ROOT_PATH"); !ok {
+		staticPath = "./public"
 	}
-	if pubPath, err = filepath.Abs(pubPath); err != nil {
+	if staticPath, err = filepath.Abs(staticPath); err != nil {
 		panic("BP_ROOT_PATH: " + err.Error())
 	}
 
-	if m, ok := os.LookupEnv("BP_QUEUE_CAP"); ok {
-		if queueCap, err = strconv.Atoi(m); err != nil {
-			panic("BP_QUEUE_CAP: " + err.Error())
-		}
-	} else {
+	if m, ok := os.LookupEnv("BP_QUEUE_CAP"); !ok {
 		queueCap = 300
+	} else if queueCap, err = strconv.Atoi(m); err != nil {
+		panic("BP_QUEUE_CAP: " + err.Error())
 	}
+
 	singleQueue = make(chan *Client, queueCap)   // declared in match.go
 	lovelornQueue = make(chan *Client, queueCap) // declared in match.go
 
-	// used in token.go
-	if e, ok := os.LookupEnv("BP_COOKIE_AGE"); ok {
-		if cookieAge, err = time.ParseDuration(e); err != nil {
-			panic("BP_COOKIE_AGE: " + err.Error())
-		}
-	} else {
+	// used in controller.go
+	if e, ok := os.LookupEnv("BP_COOKIE_AGE"); !ok {
 		cookieAge = time.Hour * 168 // 168 == 24 * 7
+	} else if cookieAge, err = time.ParseDuration(e); err != nil {
+		panic("BP_COOKIE_AGE: " + err.Error())
 	}
 
-	if e, ok := os.LookupEnv("BP_LOVELORN_AGE"); ok {
-		if lovelornAge, err = time.ParseDuration(e); err != nil {
-			panic("BP_LOVELORN_AGE: " + err.Error())
-		}
-	} else {
+	if e, ok := os.LookupEnv("BP_LOVELORN_AGE"); !ok {
 		lovelornAge = time.Minute * 90
+	} else if lovelornAge, err = time.ParseDuration(e); err != nil {
+		panic("BP_LOVELORN_AGE: " + err.Error())
 	}
 
 	if redisAddr, ok = os.LookupEnv("BP_REDIS_ADDR"); !ok {
@@ -105,12 +99,10 @@ func init() {
 		redisPass = ""
 	}
 
-	if d, ok := os.LookupEnv("BP_REDIS_DB"); ok {
-		if redisDB, err = strconv.Atoi(d); err != nil {
-			panic("BP_REDIS_DB: " + err.Error())
-		}
-	} else {
+	if d, ok := os.LookupEnv("BP_REDIS_DB"); !ok {
 		redisDB = 0
+	} else if redisDB, err = strconv.Atoi(d); err != nil {
+		panic("BP_REDIS_DB: " + err.Error())
 	}
 
 	redisClient = redis.NewClient(&redis.Options{

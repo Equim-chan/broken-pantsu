@@ -26,20 +26,22 @@ import (
 )
 
 var (
-	handleStatic = http.FileServer(http.Dir(pubPath))
-	upgrader     = websocket.Upgrader{}
+	staticPath        string
+	staticHandlerFunc = http.FileServer(http.Dir(staticPath)).ServeHTTP
+	indexPath         = filepath.Join(staticPath, "/index.html")
+	upgrader          = websocket.Upgrader{}
 )
 
 func registerHandlersToDefaultMux() {
 	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/loveStream", handleLove)
-	// in production, static files are better to be handled by other server application (Caddy in this case)
-	http.Handle("/asset/", handleStatic)
 }
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.ServeFile(w, r, filepath.Join(pubPath, "/404.html"))
+	// filtered index.html here in case of not distributing the token cookie
+	if r.URL.Path != "/" && r.URL.Path != "/index.html" {
+		// in production, static files are better to be handled by other server application (Caddy in this case)
+		staticHandlerFunc(w, r)
 		return
 	}
 
@@ -51,7 +53,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, tokenCookie)
 	}
 
-	http.ServeFile(w, r, filepath.Join(pubPath, "/index.html"))
+	http.ServeFile(w, r, indexPath)
 }
 
 func handleLove(w http.ResponseWriter, r *http.Request) {
