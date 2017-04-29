@@ -128,6 +128,10 @@ func init() {
 
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
 		tokenDist(w, r)
 		http.ServeFile(w, r, filepath.Join(pubPath, "/index.html"))
 	})
