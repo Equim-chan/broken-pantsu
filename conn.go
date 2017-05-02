@@ -38,8 +38,6 @@ type MatchedNotify struct {
 
 var (
 	lovelornAge time.Duration
-
-	broadcast = make(chan *OutBoundMessage, 10)
 )
 
 func init() {
@@ -49,20 +47,6 @@ func init() {
 		lovelornAge = time.Minute * 90
 	} else if lovelornAge, err = time.ParseDuration(e); err != nil {
 		log.Fatalln("BP_LOVELORN_AGE:", err)
-	}
-
-	go handleBroadcast()
-}
-
-func handleBroadcast() {
-	for {
-		outMsg := <-broadcast
-
-		locker.RLock()
-		for c := range clientsPool {
-			c.SendQueue <- outMsg
-		}
-		locker.RUnlock()
 	}
 }
 

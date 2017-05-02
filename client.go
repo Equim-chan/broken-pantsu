@@ -18,7 +18,6 @@ package main
 
 import (
 	"log"
-	"strconv"
 
 	"github.com/gorilla/websocket"
 )
@@ -121,20 +120,13 @@ func (c *Client) addToPool() {
 	clientsPool[c] = true
 	onlineUsers++
 	locker.Unlock()
-	broadcast <- &OutBoundMessage{"online users", strconv.FormatUint(onlineUsers, 10)}
 }
 
 func (c *Client) removeFromPool() {
-	locker.RLock()
-	_, ok := clientsPool[c]
-	locker.RUnlock()
-	if ok {
-		locker.Lock()
-		delete(clientsPool, c)
-		onlineUsers--
-		broadcast <- &OutBoundMessage{"online users", strconv.FormatUint(onlineUsers, 10)}
-		locker.Unlock()
-	}
+	locker.Lock()
+	delete(clientsPool, c)
+	onlineUsers--
+	locker.Unlock()
 }
 
 // this function can guarantee no concurrent read from the same Conn
@@ -144,7 +136,7 @@ func (c *Client) runRecvQueue() {
 		var inMsg InBoundMessage
 
 		if err := c.Conn.ReadJSON(&inMsg); err != nil {
-			log.Println("(FROM READ) DISCONNECTED:", c.Token)
+			log.Println("DISCONNECTED:", c.Token)
 
 			c.removeFromPool()
 
@@ -170,17 +162,14 @@ func (c *Client) runSendQueue() {
 	for {
 		select {
 		case outMsg := <-c.SendQueue:
-			if err := c.Conn.WriteJSON(outMsg); err != nil {
-				// log.Println("(FROM WRITE) DISCONNECTED:", c.Token)
+			c.Conn.WriteJSON(outMsg)
+			// if we cannot write (WriteJSON returns an error), then we must cannot read as well
+			// therefore we assert that c.removeFromPool() has already been called
+			// and what we need to do here is just ignoring this error
 
-				// c.removeFromPool()
-
-				// c.DisconnectionSignal <- 2
-				return
-			}
 		case <-c.internalDisconnectionSignal:
 			// now that we received this signal, then it must be from runRecvQueue
-			// therefore we assert that c.removeFromPool() has already been called
+			// therefore, we make the same assertion as above
 			// and what we need to do here is just destroying this goroutine
 			return
 		}

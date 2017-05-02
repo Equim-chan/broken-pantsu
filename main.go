@@ -17,6 +17,7 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -41,6 +42,7 @@ var (
 
 func init() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
+	log.SetOutput(ioutil.Discard)
 
 	ok := false
 	var err error = nil
