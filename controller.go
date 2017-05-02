@@ -17,7 +17,9 @@
 package main
 
 import (
+	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -26,22 +28,42 @@ import (
 )
 
 var (
-	staticPath        string
-	staticHandlerFunc = http.FileServer(http.Dir(staticPath)).ServeHTTP
-	indexPath         = filepath.Join(staticPath, "/index.html")
-	upgrader          = websocket.Upgrader{}
+	cookieAge time.Duration
+
+	staticPath  string
+	indexPath   string
+	serveStatic func(http.ResponseWriter, *http.Request)
+
+	upgrader = websocket.Upgrader{}
 )
 
-func registerHandlersToDefaultMux() {
+func init() {
+	ok := false
+	var err error = nil
+
+	if staticPath, ok = os.LookupEnv("BP_ROOT_PATH"); !ok {
+		staticPath = "./public"
+	}
+	if staticPath, err = filepath.Abs(staticPath); err != nil {
+		log.Fatalln("BP_ROOT_PATH:", err)
+	}
+	serveStatic = http.FileServer(http.Dir(staticPath)).ServeHTTP
+	indexPath = filepath.Join(staticPath, "/index.html")
+
+	if e, ok := os.LookupEnv("BP_COOKIE_AGE"); !ok {
+		cookieAge = time.Hour * 168 // 168 == 24 * 7
+	} else if cookieAge, err = time.ParseDuration(e); err != nil {
+		log.Fatalln("BP_COOKIE_AGE:", err)
+	}
+
 	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/loveStream", handleLove)
 }
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
-	// filtered index.html here in case of not distributing the token cookie
-	if r.URL.Path != "/" && r.URL.Path != "/index.html" {
+	if r.URL.Path != "/" {
 		// in production, static files are better to be handled by other server application (Caddy in this case)
-		staticHandlerFunc(w, r)
+		serveStatic(w, r)
 		return
 	}
 

@@ -18,6 +18,8 @@ package main
 
 import (
 	"log"
+	"os"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -35,8 +37,22 @@ type MatchedNotify struct {
 }
 
 var (
+	lovelornAge time.Duration
+
 	broadcast = make(chan *OutBoundMessage, 10)
 )
+
+func init() {
+	var err error = nil
+
+	if e, ok := os.LookupEnv("BP_LOVELORN_AGE"); !ok {
+		lovelornAge = time.Minute * 90
+	} else if lovelornAge, err = time.ParseDuration(e); err != nil {
+		log.Fatalln("BP_LOVELORN_AGE:", err)
+	}
+
+	go handleBroadcast()
+}
 
 func handleBroadcast() {
 	for {

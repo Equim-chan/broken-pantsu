@@ -20,10 +20,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
-	"time"
 
 	_ "net/http/pprof"
 
@@ -31,13 +29,10 @@ import (
 )
 
 var (
-	address     string
-	queueCap    int
-	cookieAge   time.Duration
-	lovelornAge time.Duration
-	redisAddr   string
-	redisPass   string
-	redisDB     int
+	address   string
+	redisAddr string
+	redisPass string
+	redisDB   int
 
 	// global
 	redisClient *redis.Client
@@ -45,13 +40,6 @@ var (
 )
 
 func init() {
-	defer func() {
-		if err := recover(); err != nil {
-			log.Println("INIT ERROR:", err)
-			os.Exit(1)
-		}
-	}()
-
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 
 	ok := false
@@ -59,36 +47,6 @@ func init() {
 
 	if address, ok = os.LookupEnv("BP_ADDR"); !ok {
 		address = "localhost:56833"
-	}
-
-	// used in controller.go
-	if staticPath, ok = os.LookupEnv("BP_ROOT_PATH"); !ok {
-		staticPath = "./public"
-	}
-	if staticPath, err = filepath.Abs(staticPath); err != nil {
-		panic("BP_ROOT_PATH: " + err.Error())
-	}
-
-	if m, ok := os.LookupEnv("BP_QUEUE_CAP"); !ok {
-		queueCap = 300
-	} else if queueCap, err = strconv.Atoi(m); err != nil {
-		panic("BP_QUEUE_CAP: " + err.Error())
-	}
-
-	singleQueue = make(chan *Client, queueCap)   // declared in match.go
-	lovelornQueue = make(chan *Client, queueCap) // declared in match.go
-
-	// used in controller.go
-	if e, ok := os.LookupEnv("BP_COOKIE_AGE"); !ok {
-		cookieAge = time.Hour * 168 // 168 == 24 * 7
-	} else if cookieAge, err = time.ParseDuration(e); err != nil {
-		panic("BP_COOKIE_AGE: " + err.Error())
-	}
-
-	if e, ok := os.LookupEnv("BP_LOVELORN_AGE"); !ok {
-		lovelornAge = time.Minute * 90
-	} else if lovelornAge, err = time.ParseDuration(e); err != nil {
-		panic("BP_LOVELORN_AGE: " + err.Error())
 	}
 
 	if redisAddr, ok = os.LookupEnv("BP_REDIS_ADDR"); !ok {
@@ -102,7 +60,7 @@ func init() {
 	if d, ok := os.LookupEnv("BP_REDIS_DB"); !ok {
 		redisDB = 0
 	} else if redisDB, err = strconv.Atoi(d); err != nil {
-		panic("BP_REDIS_DB: " + err.Error())
+		log.Fatalln("BP_REDIS_DB:", err)
 	}
 
 	redisClient = redis.NewClient(&redis.Options{
@@ -111,18 +69,12 @@ func init() {
 		DB:       redisDB,
 	})
 	if err = redisClient.Ping().Err(); err != nil {
-		panic("REDIS INIT ERROR: " + err.Error())
+		log.Fatalln("REDIS INIT ERROR:", err)
 	}
-
-	go handleBroadcast() // declared in conn.go
-	go matchBus()        // declared in match.go
-	go reunionBus()      // declared in match.go
-
-	registerHandlersToDefaultMux() // declared in controller.go
 }
 
 func main() {
 	log.Println("Serving at " + address + ", GOOD LUCK!")
 	log.Println("http://" + address)
-	log.Fatal(http.ListenAndServe(address, nil))
+	log.Fatalln(http.ListenAndServe(address, nil))
 }

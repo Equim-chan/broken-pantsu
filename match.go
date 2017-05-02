@@ -18,12 +18,31 @@ package main
 
 import (
 	"log"
+	"os"
+	"strconv"
 )
 
 var (
 	singleQueue   chan *Client
 	lovelornQueue chan *Client
+	queueCap      int
 )
+
+func init() {
+	var err error = nil
+
+	if m, ok := os.LookupEnv("BP_QUEUE_CAP"); !ok {
+		queueCap = 300
+	} else if queueCap, err = strconv.Atoi(m); err != nil {
+		log.Fatalln("BP_QUEUE_CAP:", err)
+	}
+
+	singleQueue = make(chan *Client, queueCap)
+	lovelornQueue = make(chan *Client, queueCap)
+
+	go matchBus()
+	go reunionBus()
+}
 
 func matchBus() {
 	bufferQueue := []*Client{}
