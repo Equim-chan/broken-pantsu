@@ -36,7 +36,7 @@ var (
 
 	// global
 	redisClient *redis.Client
-	locker      sync.Mutex
+	locker      sync.RWMutex
 )
 
 func init() {

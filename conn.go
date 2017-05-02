@@ -58,11 +58,11 @@ func handleBroadcast() {
 	for {
 		outMsg := <-broadcast
 
-		locker.Lock()
+		locker.RLock()
 		for c := range clientsPool {
 			c.SendQueue <- outMsg
 		}
-		locker.Unlock()
+		locker.RUnlock()
 	}
 }
 
@@ -118,9 +118,9 @@ func handleConnections(ws *websocket.Conn) {
 			return
 		}
 
-		locker.Lock()
+		locker.RLock()
 		_, ok := clientsPool[c.Partner]
-		locker.Unlock()
+		locker.RUnlock()
 		if !ok {
 			return
 		}

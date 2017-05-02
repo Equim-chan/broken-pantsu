@@ -125,11 +125,16 @@ func (c *Client) addToPool() {
 }
 
 func (c *Client) removeFromPool() {
-	locker.Lock()
-	delete(clientsPool, c)
-	onlineUsers--
-	locker.Unlock()
-	broadcast <- &OutBoundMessage{"online users", strconv.FormatUint(onlineUsers, 10)}
+	locker.RLock()
+	_, ok := clientsPool[c]
+	locker.RUnlock()
+	if ok {
+		locker.Lock()
+		delete(clientsPool, c)
+		onlineUsers--
+		broadcast <- &OutBoundMessage{"online users", strconv.FormatUint(onlineUsers, 10)}
+		locker.Unlock()
+	}
 }
 
 // this function can guarantee no concurrent read from the same Conn
@@ -166,11 +171,11 @@ func (c *Client) runSendQueue() {
 		select {
 		case outMsg := <-c.SendQueue:
 			if err := c.Conn.WriteJSON(outMsg); err != nil {
-				log.Println("(FROM WRITE) DISCONNECTED:", c.Token)
+				// log.Println("(FROM WRITE) DISCONNECTED:", c.Token)
 
-				c.removeFromPool()
+				// c.removeFromPool()
 
-				c.DisconnectionSignal <- 2
+				// c.DisconnectionSignal <- 2
 				return
 			}
 		case <-c.internalDisconnectionSignal:

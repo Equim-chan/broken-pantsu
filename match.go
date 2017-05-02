@@ -56,10 +56,10 @@ func matchBus() {
 			someSingle := <-singleQueue
 
 			// it will check if one of them is disconnected while waiting for matching
-			locker.Lock()
+			locker.RLock()
 			_, ok0 := clientsPool[c]
 			_, ok1 := clientsPool[someSingle]
-			locker.Unlock()
+			locker.RUnlock()
 			if !ok0 {
 				c = someSingle
 				continue
@@ -109,10 +109,10 @@ func reunionBus() {
 		for {
 			heartBroken := <-lovelornQueue
 
-			locker.Lock()
+			locker.RLock()
 			_, ok0 := clientsPool[c]
 			_, ok1 := clientsPool[heartBroken]
-			locker.Unlock()
+			locker.RUnlock()
 			if !ok0 {
 				c = heartBroken
 				continue
