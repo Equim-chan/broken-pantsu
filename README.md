@@ -52,8 +52,7 @@ There are lots of things to do at the moment...
 
 ### Backend
 * [x] recv -> InBoundMessage -> unpack -> process -> pack -> OutBoundMessage -> send
-* [ ] reject new connection from the same client when there is already one
-* [ ] add session support (in age of 3 hours)
+* [x] reject new connection from the same client when there is already one
 * [x] enforce matching algorithm
 * [ ] check for thread safety
 * [ ] check for possible memory leak
