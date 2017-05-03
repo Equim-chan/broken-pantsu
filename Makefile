@@ -19,7 +19,7 @@ READLINK := "$(shell if type greadlink > /dev/null 2>&1 ; then echo greadlink; e
 RELEASE := "$(shell $(READLINK) -f ./release)"
 BUILD_TMP := "$(shell $(READLINK) -f ./tmp)"
 PWD := "$(shell pwd)"
-VERSION := $(shell date -u +%y%m%d)
+VERSION := $(shell cat ./semver)+build$(shell date -u +%y%m%d`)
 LDFLAGS := "-X main.VERSION=$(VERSION) -s -w"
 GCFLAGS := ""
 

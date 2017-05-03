@@ -144,7 +144,7 @@ func reunionBus() {
 				}
 				bufferQueue = nil
 				if p != nil {
-					log.Println("RE-MATCHED! CONGRATZ!", c.Token, "<❤>", p.Token)
+					log.Println("CONGRATZ FOR REUNION:", c.Token, "<❤>", p.Token)
 					break
 				}
 				c = <-lovelornQueue

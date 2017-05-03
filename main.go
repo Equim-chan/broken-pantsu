@@ -30,6 +30,8 @@ import (
 )
 
 var (
+	VERSION string
+
 	address   string
 	redisAddr string
 	redisPass string
@@ -79,7 +81,12 @@ func init() {
 }
 
 func main() {
-	log.Println("Serving at " + address + ", GOOD LUCK!")
-	log.Println("http://" + address)
+	log.Printf(`
+　　 ＿＿＿＿＿    Broken Pantsu
+　　(＼　 ∞　ﾉ      %s
+　　 ＼ヽ　　/
+　　　 ヽ)⌒ﾉ      Serving at %s, PID: %d
+　　　　　￣         GOOD LUCK!
+`, VERSION, address, os.Getpid())
 	log.Fatalln(http.ListenAndServe(address, nil))
 }
