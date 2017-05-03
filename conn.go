@@ -59,14 +59,12 @@ func handleBroadcast() {
 		outMsg := <-broadcast
 
 		locker.RLock()
-		for v := range clientsPool {
-			go func(c *Client, msg *OutBoundMessage) {
-				select {
-				case c.SendQueue <- msg:
-				default:
-					break
-				}
-			}(v, outMsg)
+		for c := range clientsPool {
+			select {
+			case c.SendQueue <- outMsg:
+			default:
+				break
+			}
 		}
 		locker.RUnlock()
 	}
