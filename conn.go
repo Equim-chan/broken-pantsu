@@ -79,7 +79,6 @@ func handleConnections(ws *websocket.Conn) {
 		lovelornQueue <- c
 		select {
 		case c.Partner = <-c.PartnerReceiver:
-			break
 		case <-c.DisconnectionSignal:
 			return
 		}
@@ -89,7 +88,6 @@ func handleConnections(ws *websocket.Conn) {
 		singleQueue <- c
 		select {
 		case c.Partner = <-c.PartnerReceiver:
-			break
 		case <-c.DisconnectionSignal:
 			return
 		}
@@ -109,7 +107,11 @@ func handleConnections(ws *websocket.Conn) {
 			return
 		}
 
-		c.Partner.HeartbrokenSignal <- 1
+		select {
+		case c.Partner.HeartbrokenSignal <- 1:
+		default:
+			return
+		}
 	}()
 
 	// it serves as an event loop here
@@ -142,7 +144,6 @@ func handleConnections(ws *websocket.Conn) {
 
 				select {
 				case c.Partner = <-c.PartnerReceiver:
-					break
 				case <-c.DisconnectionSignal:
 					return
 				}
@@ -170,7 +171,6 @@ func handleConnections(ws *websocket.Conn) {
 
 			select {
 			case c.Partner = <-c.PartnerReceiver:
-				break
 			case <-c.DisconnectionSignal:
 				log.Println("DISCONNECTED BEFORE RE-MATCHED")
 				return
@@ -185,7 +185,6 @@ func handleConnections(ws *websocket.Conn) {
 			// TODO: can we migrate this select to the outter select?
 			select {
 			case c.Partner = <-c.PartnerReceiver:
-				break
 			case <-c.DisconnectionSignal:
 				return
 			}

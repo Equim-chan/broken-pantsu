@@ -32,7 +32,7 @@ func init() {
 	var err error = nil
 
 	if m, ok := os.LookupEnv("BP_QUEUE_CAP"); !ok {
-		queueCap = 300
+		queueCap = 1000
 	} else if queueCap, err = strconv.Atoi(m); err != nil {
 		log.Fatalln("BP_QUEUE_CAP:", err)
 	}
@@ -96,8 +96,17 @@ func matchBus() {
 			}
 		}
 
-		c.PartnerReceiver <- p
-		p.PartnerReceiver <- c
+		select {
+		case c.PartnerReceiver <- p:
+		default:
+			c = <-singleQueue
+			continue
+		}
+		select {
+		case p.PartnerReceiver <- c:
+		default:
+			continue
+		}
 	}
 }
 
@@ -142,8 +151,17 @@ func reunionBus() {
 			}
 		}
 
-		c.PartnerReceiver <- p
-		p.PartnerReceiver <- c
+		select {
+		case c.PartnerReceiver <- p:
+		default:
+			c = <-singleQueue
+			continue
+		}
+		select {
+		case p.PartnerReceiver <- c:
+		default:
+			continue
+		}
 
 		multi := redisClient.Pipeline()
 		multi.Del(c.Token)

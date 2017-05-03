@@ -42,10 +42,13 @@ var (
 
 func init() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
-	log.SetOutput(ioutil.Discard)
 
 	ok := false
 	var err error = nil
+
+	if _, ok = os.LookupEnv("BP_QUIET"); ok {
+		log.SetOutput(ioutil.Discard)
+	}
 
 	if address, ok = os.LookupEnv("BP_ADDR"); !ok {
 		address = "localhost:56833"

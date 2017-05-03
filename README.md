@@ -34,12 +34,13 @@ List of environment variables:
 | ----    | -------    | --- |
 | BP_ADDR | localhost:56833 | Where the application listens to (56833 means "loved") |
 | BP_ROOT_PATH | ./public | Where the static files are located. Relative path will be resolved into absolute path automatically |
-| BP_QUEUE_CAP | 300 | The capacity of `singleQueue` and `lovelornQueue` |
+| BP_QUEUE_CAP | 1000 | The capacity of `singleQueue` and `lovelornQueue` |
 | BP_COOKIE_AGE | 168h | The age of cookie |
 | BP_LOVELORN_AGE | 1h30m | The age of lovelorn pairs stored in redis |
 | BP_REDIS_ADDR | localhost:6379 | The address of redis |
 | BP_REDIS_PASS | (empty) | The password of redis |
 | BP_REDIS_DB | 0 | The DB of redis |
+| BP_QUIET | (empty) | Set any value to disable logging |
 
 ## Dependencies
 We use [glide](https://github.com/Masterminds/glide) as package manager.
