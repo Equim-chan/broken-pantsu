@@ -27,3 +27,4 @@ release/
 tmp/
 vendor/
 eq.bat
+bm.bat
