@@ -17,6 +17,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"math/rand"
 	"time"
@@ -25,13 +26,13 @@ import (
 	"github.com/satori/go.uuid"
 )
 
-const (
-	total          = 200000
-	maxConcurrency = 1000
-)
+var (
+	likesList   = [...]string{"Yuri", "Cosplay", "Crossdressing", "Cuddling", "Eyebrows", "Fangs", "Fantasy", "Futanari", "Genderbend", "Glasses", "Hentai", "Holding Hands", "Horror", "Housewife", "Humiliation", "Idol", "Incest", "Loli", "Maid", "Miko", "Monster Girl", "Muscles", "Netorare", "Nurse", "Office Lady", "Oppai", "Schoolgirl", "Sci-Fi", "Shota", "Slice-of-Life", "Socks", "Spread", "Stockings", "Swimsuit", "Teacher", "Tentacles", "Tomboy", "Tsundere", "Vanilla", "Warm Smiles", "Western", "Yandere", "Yaoi", "Yukata"}
+	letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдеёжзийклмнопрстуфхцчшщъыьэюяяАБВГДЕЁЖЗИЙЛМНОПРСТУФХЦЧШЩЪЫЬЭЮ萌破胖次")
 
-var likesList = [...]string{"Yuri", "Cosplay", "Crossdressing", "Cuddling", "Eyebrows", "Fangs", "Fantasy", "Futanari", "Genderbend", "Glasses", "Hentai", "Holding Hands", "Horror", "Housewife", "Humiliation", "Idol", "Incest", "Loli", "Maid", "Miko", "Monster Girl", "Muscles", "Netorare", "Nurse", "Office Lady", "Oppai", "Schoolgirl", "Sci-Fi", "Shota", "Slice-of-Life", "Socks", "Spread", "Stockings", "Swimsuit", "Teacher", "Tentacles", "Tomboy", "Tsundere", "Vanilla", "Warm Smiles", "Western", "Yandere", "Yaoi", "Yukata"}
-var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдеёжзийклмнопрстуфхцчшщъыьэюяяАБВГДЕЁЖЗИЙЛМНОПРСТУФХЦЧШЩЪЫЬЭЮ萌破胖次")
+	total          int
+	maxConcurrency int
+)
 
 type Identity struct {
 	Username string   `json:"username"`
@@ -42,7 +43,12 @@ type Identity struct {
 }
 
 func init() {
+	flag.IntVar(&total, "t", 200000, "total count of requests")
+	flag.IntVar(&maxConcurrency, "c", 1000, "max concurrency goroutines for requests")
+	flag.Parse()
+
 	rand.Seed(time.Now().UnixNano())
+
 	log.SetFlags(log.Lmicroseconds)
 	log.Println("Max concurrency", maxConcurrency, "of", total, "requests")
 }
