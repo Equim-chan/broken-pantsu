@@ -18,6 +18,7 @@ package main
 
 import (
 	"log"
+	"strconv"
 
 	"github.com/gorilla/websocket"
 )
@@ -120,6 +121,7 @@ func (c *Client) addToPool() {
 	clientsPool[c] = true
 	onlineUsers++
 	locker.Unlock()
+	broadcast <- &OutBoundMessage{"online users", strconv.FormatUint(onlineUsers, 10)}
 }
 
 func (c *Client) removeFromPool() {
@@ -127,6 +129,7 @@ func (c *Client) removeFromPool() {
 	delete(clientsPool, c)
 	onlineUsers--
 	locker.Unlock()
+	broadcast <- &OutBoundMessage{"online users", strconv.FormatUint(onlineUsers, 10)}
 }
 
 // this function can guarantee no concurrent read from the same Conn

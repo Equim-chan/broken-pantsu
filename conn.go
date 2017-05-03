@@ -38,6 +38,8 @@ type MatchedNotify struct {
 
 var (
 	lovelornAge time.Duration
+
+	broadcast = make(chan *OutBoundMessage, 20)
 )
 
 func init() {
@@ -47,6 +49,26 @@ func init() {
 		lovelornAge = time.Minute * 90
 	} else if lovelornAge, err = time.ParseDuration(e); err != nil {
 		log.Fatalln("BP_LOVELORN_AGE:", err)
+	}
+
+	go handleBroadcast()
+}
+
+func handleBroadcast() {
+	for {
+		outMsg := <-broadcast
+
+		locker.RLock()
+		for c := range clientsPool {
+			go func(msg *OutBoundMessage) {
+				select {
+				case c.SendQueue <- msg:
+				default:
+					break
+				}
+			}(outMsg)
+		}
+		locker.RUnlock()
 	}
 }
 
@@ -68,7 +90,11 @@ func handleConnections(ws *websocket.Conn) {
 	// instantiate Client object according to the identity
 	c := NewClient(ws, &identity)
 	log.Println("CONNECTED:", c.Token)
-	c.SendQueue <- &OutBoundMessage{"approved", ""}
+	select {
+	case c.SendQueue <- &OutBoundMessage{"approved", ""}:
+	default:
+		break
+	}
 
 	isInitiativeDisconnect := false
 
@@ -82,7 +108,11 @@ func handleConnections(ws *websocket.Conn) {
 		case <-c.DisconnectionSignal:
 			return
 		}
-		c.SendQueue <- &MatchedNotify{"reunion", c.Partner.ToJsonStruct()}
+		select {
+		case c.SendQueue <- &MatchedNotify{"reunion", c.Partner.ToJsonStruct()}:
+		default:
+			break
+		}
 	} else {
 		// if this client is new
 		singleQueue <- c
@@ -91,7 +121,11 @@ func handleConnections(ws *websocket.Conn) {
 		case <-c.DisconnectionSignal:
 			return
 		}
-		c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}
+		select {
+		case c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}:
+		default:
+			break
+		}
 	}
 	defer func() {
 		log.Println("DEFER IS TRIGGERED FOR:", c.Token)
@@ -120,12 +154,24 @@ func handleConnections(ws *websocket.Conn) {
 		case inMsg := <-c.RecvQueue:
 			switch inMsg.Type {
 			case "chat":
-				c.Partner.SendQueue <- &OutBoundMessage{"chat", inMsg.Message}
+				select {
+				case c.Partner.SendQueue <- &OutBoundMessage{"chat", inMsg.Message}:
+				default:
+					break
+				}
 			case "typing":
-				c.Partner.SendQueue <- &OutBoundMessage{"typing", inMsg.Message}
+				select {
+				case c.Partner.SendQueue <- &OutBoundMessage{"typing", inMsg.Message}:
+				default:
+					break
+				}
 			case "offline":
 				log.Println("INITIATIVE DISCONNECT FROM:", c.Token)
-				c.Partner.SendQueue <- &OutBoundMessage{"switch", ""}
+				select {
+				case c.Partner.SendQueue <- &OutBoundMessage{"switch", ""}:
+				default:
+					break
+				}
 				c.Partner.GotSwitchedSignal <- 1
 
 				isInitiativeDisconnect = true
@@ -136,7 +182,11 @@ func handleConnections(ws *websocket.Conn) {
 				return
 			case "switch":
 				log.Println("SWITCH IS TRIGGERED FOR:", c.Token)
-				c.Partner.SendQueue <- &OutBoundMessage{"switch", ""}
+				select {
+				case c.Partner.SendQueue <- &OutBoundMessage{"switch", ""}:
+				default:
+					break
+				}
 				c.Partner.GotSwitchedSignal <- 1
 
 				c.Partner = nil
@@ -148,14 +198,22 @@ func handleConnections(ws *websocket.Conn) {
 					return
 				}
 
-				c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}
+				select {
+				case c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}:
+				default:
+					break
+				}
 			}
 
 		case <-c.HeartbrokenSignal:
 			p := c.Partner
 			c.Partner = nil
 
-			c.SendQueue <- &OutBoundMessage{"panic", ""}
+			select {
+			case c.SendQueue <- &OutBoundMessage{"panic", ""}:
+			default:
+				break
+			}
 
 			multi := redisClient.Pipeline()
 			multi.Set(c.Token, p.Token, lovelornAge)
@@ -176,7 +234,11 @@ func handleConnections(ws *websocket.Conn) {
 				return
 			}
 
-			c.SendQueue <- &MatchedNotify{"reunion", c.Partner.ToJsonStruct()}
+			select {
+			case c.SendQueue <- &MatchedNotify{"reunion", c.Partner.ToJsonStruct()}:
+			default:
+				break
+			}
 
 		case <-c.GotSwitchedSignal:
 			c.Partner = nil
@@ -189,7 +251,11 @@ func handleConnections(ws *websocket.Conn) {
 				return
 			}
 
-			c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}
+			select {
+			case c.SendQueue <- &MatchedNotify{"matched", c.Partner.ToJsonStruct()}:
+			default:
+				break
+			}
 
 		case <-c.DisconnectionSignal:
 			// trigger defer directly
