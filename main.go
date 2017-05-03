@@ -21,6 +21,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"sync"
 
@@ -77,6 +78,24 @@ func init() {
 	})
 	if err = redisClient.Ping().Err(); err != nil {
 		log.Fatalln("REDIS INIT ERROR:", err)
+	}
+
+	go hookInterruptAndCleanUp()
+}
+
+func hookInterruptAndCleanUp() {
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt)
+
+	<-c
+	log.Println("SIGINT detected, now cleaning up...")
+	// delete online set only, as it doesn't have expire. No change to lovelorn records
+	if err := redisClient.Del("online").Err(); err != nil {
+		log.Println("REDIS CLEAN UP ERROR:", err)
+		log.Fatalln("exited with code 1")
+	} else {
+		log.Println("gracefully exited with code 0")
+		os.Exit(0)
 	}
 }
 

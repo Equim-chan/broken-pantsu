@@ -18,6 +18,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"strconv"
 
 	"github.com/gorilla/websocket"
@@ -26,6 +27,8 @@ import (
 var likesList = [...]string{"Yuri", "Cosplay", "Crossdressing", "Cuddling", "Eyebrows", "Fangs", "Fantasy", "Futanari", "Genderbend", "Glasses", "Hentai", "Holding Hands", "Horror", "Housewife", "Humiliation", "Idol", "Incest", "Loli", "Maid", "Miko", "Monster Girl", "Muscles", "Netorare", "Nurse", "Office Lady", "Oppai", "Schoolgirl", "Sci-Fi", "Shota", "Slice-of-Life", "Socks", "Spread", "Stockings", "Swimsuit", "Teacher", "Tentacles", "Tomboy", "Tsundere", "Vanilla", "Warm Smiles", "Western", "Yandere", "Yaoi", "Yukata"} // len = 43
 
 var (
+	minimum uint8
+
 	onlineUsers uint64 = 0
 	clientsPool        = make(map[*Client]bool)
 )
@@ -54,6 +57,7 @@ type Client struct {
 
 	Partner         *Client
 	PartnerReceiver chan *Client
+	MinimumSim      uint8
 }
 
 type ClientJSON struct {
@@ -62,6 +66,16 @@ type ClientJSON struct {
 	Likes    []string `json:"likes"`
 	Timezone int8     `json:"Timezone"`
 	// Token is private
+}
+
+func init() {
+	if m, ok := os.LookupEnv("BP_MIN_SIM"); !ok {
+		minimum = 5
+	} else if u64_minimum, err := strconv.ParseUint(m, 10, 8); err != nil {
+		log.Fatalln("BP_MIN_SIM:", err)
+	} else {
+		minimum = uint8(u64_minimum)
+	}
 }
 
 func NewClient(conn *websocket.Conn, identity *Identity) *Client {
@@ -98,6 +112,7 @@ func NewClient(conn *websocket.Conn, identity *Identity) *Client {
 		SendQueue:                   make(chan interface{}, 20),
 		Partner:                     nil,
 		PartnerReceiver:             make(chan *Client),
+		MinimumSim:                  minimum,
 	}
 
 	go c.runRecvQueue()
@@ -194,6 +209,10 @@ func (c *Client) LikesCount() uint8 {
 
 func (c *Client) SimilarityWith(p *Client) uint8 {
 	return c.parseMask(c.likesFlag & p.likesFlag)
+}
+
+func (c *Client) ResetMinimumSim() {
+	c.MinimumSim = minimum
 }
 
 func (c *Client) ToJsonStruct() *ClientJSON {
