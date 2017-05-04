@@ -46,6 +46,9 @@ List of environment variables:
 | BP_REDIS_DB | 0 | The DB of redis |
 | BP_QUIET | _(empty)_ | Set any value to disable logging |
 
+## Requirements
+* Redis 3.x
+
 ## Dependencies
 We use [glide](https://github.com/Masterminds/glide) as package manager.
 * [github.com/gorilla/websocket](https://github.com/gorilla/websocket)
