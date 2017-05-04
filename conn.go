@@ -157,12 +157,14 @@ func handleConnections(ws *websocket.Conn) {
 				default:
 					break
 				}
+
 			case "typing":
 				select {
 				case c.Partner.SendQueue <- &OutBoundMessage{"typing", inMsg.Message}:
 				default:
 					break
 				}
+
 			case "offline":
 				log.Println("INITIATIVE DISCONNECT FROM:", c.Token)
 				select {
@@ -170,7 +172,11 @@ func handleConnections(ws *websocket.Conn) {
 				default:
 					break
 				}
-				c.Partner.GotSwitchedSignal <- 1
+				select {
+				case c.Partner.GotSwitchedSignal <- 1:
+				default:
+					break
+				}
 
 				isInitiativeDisconnect = true
 
@@ -178,6 +184,7 @@ func handleConnections(ws *websocket.Conn) {
 				c.Partner.Partner = nil
 				singleQueue <- c.Partner
 				return
+
 			case "switch":
 				log.Println("SWITCH IS TRIGGERED FOR:", c.Token)
 				select {
@@ -185,7 +192,11 @@ func handleConnections(ws *websocket.Conn) {
 				default:
 					break
 				}
-				c.Partner.GotSwitchedSignal <- 1
+				select {
+				case c.Partner.GotSwitchedSignal <- 1:
+				default:
+					break
+				}
 
 				c.Partner = nil
 				singleQueue <- c

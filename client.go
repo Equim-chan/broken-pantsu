@@ -20,6 +20,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -164,13 +165,17 @@ func (c *Client) runRecvQueue() {
 			break
 		}
 
-		if c.Partner == nil {
-			// messages sent before matched are dropped by default
-			continue
+		// messages sent before matched are dropped by default, except for ping
+		if inMsg.Type == "ping" {
+			select {
+			case c.SendQueue <- &OutBoundMessage{"pong", strconv.FormatInt(time.Now().UTC().UnixNano()/1e6, 10)}:
+			default:
+				break
+			}
+		} else if c.Partner != nil {
+			// expose the message to outter process
+			c.RecvQueue <- &inMsg
 		}
-
-		// expose the message to outter process
-		c.RecvQueue <- &inMsg
 	}
 }
 

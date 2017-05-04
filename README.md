@@ -11,24 +11,24 @@
 * __Love, rather than sorry__
 
 ## Setup
-```console
+```shell
 $ go get -u github.com/Equim-chan/broken-pantsu
 $ $GOPATH/bin/broken-pantsu
 ```
 or manually
-```console
+```shell
 $ git clone git@github.com:Equim-chan/broken-pantsu.git
 $ make
 $ ./broken-pantsu
 ```
 Build executable files for all platforms and archs
-```console
+```shell
 $ make release -j4
 ```
 > Running `make` with the `-j4` flag will cause it to run 4 compilation jobs concurrently which may significantly reduce build time. The number after `-j` can be changed to best suit the number of processor cores on your machine. If you run into problems running `make` with concurrency, try running it without the `-j4` flag. See the [GNU Make Documentation](https://www.gnu.org/software/make/manual/html_node/Parallel.html) for more information.
 
 Config can be passed via environment variables. Example:
-```console
+```shell
 $ BP_ADDR=:5543 BP_ROOT_PATH=../dist BP_QUEUE_CAP=100 ./broken-pantsu
 ```
 List of environment variables:
