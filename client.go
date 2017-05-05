@@ -165,7 +165,7 @@ func (c *Client) runRecvQueue() {
 			break
 		}
 
-		// messages sent before matched are dropped by default, except for ping
+		// messages arrived before matched are dropped by default, except for "ping"
 		if inMsg.Type == "ping" {
 			select {
 			case c.SendQueue <- &OutBoundMessage{"pong", strconv.FormatInt(time.Now().UTC().UnixNano()/1e6, 10)}:

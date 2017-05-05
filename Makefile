@@ -14,21 +14,26 @@
 
 SOFTWARE := broken-pantsu
 
+SHELL := /bin/bash
 READLINK := "$(shell if type greadlink > /dev/null 2>&1 ; then echo greadlink; else echo readlink; fi)"
 
-RELEASE := "$(shell $(READLINK) -f ./release)"
+RELEASE_PATH := "$(shell $(READLINK) -f ./release)"
 BUILD_TMP := "$(shell $(READLINK) -f ./tmp)"
 PWD := "$(shell pwd)"
 VERSION := $(shell cat ./semver)+build$(shell date -u +%y%m%d)
+
+GC := go build
 LDFLAGS := "-X main.VERSION=$(VERSION) -s -w"
 GCFLAGS := ""
 
-ARCHS := amd64 386
-ARMS := 5 6 7
 SUM := sha1sum
 
-SHELL := /bin/bash
+ARCHS := amd64 386
+ARMS := 5 6 7
+
+ifdef V
 VERBOSE := -x
+endif
 
 love: setup-tmp \
 	install-dep \
@@ -45,6 +50,7 @@ release: setup-tmp \
 	release-darwin \
 	release-windows \
 	release-freebsd \
+	release-openbsd \
 	release-arms \
 	release-mipsle
 
@@ -52,95 +58,63 @@ release: setup-tmp \
 	make release-chksum
 
 build:
-	@GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
-		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
+	@# use printf instead of echo so that colors can print in windows cmd
+	@ \
+	printf "    \x1b[32mGOOS=`go env GOOS` \x1b[33mGOARCH=`go env GOARCH` \x1b[36mGC\x1b[0m\n" ; \
+	GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
+		$(GC) -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
 			$(VERBOSE) \
 			-o $(SOFTWARE)
 
 setup-release:
-	mkdir -p $(RELEASE)
+	mkdir -p $(RELEASE_PATH)
 
-release-linux: setup-release gopath-spoof
-	@for arch in $(ARCHS); do \
-		GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
-		GOOS=linux GOARCH=$${arch} \
-			go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
+release-%: setup-release gopath-spoof
+	@ \
+	GOOS=$(subst release-,,$@) ; \
+	for arch in $(ARCHS); do \
+		printf "    \x1b[32mGOOS=$${GOOS} \x1b[33mGOARCH=$${arch} \x1b[36mGC\x1b[0m\n" ; \
+		GOPATH=$(BUILD_TMP) CGO_ENABLED=0 GOARCH=$${arch} \
+			$(GC) -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
 				$(VERBOSE) \
-				-o $(BUILD_TMP)/$(SOFTWARE)-linux-$${arch} ; \
+				-o $(BUILD_TMP)/$(SOFTWARE)-$${GOOS}-$${arch} ; \
 		cd $(BUILD_TMP) ; \
 		tar -zcf \
-			$(RELEASE)/$(SOFTWARE)-linux-$${arch}-$(VERSION).tar.gz \
-			$(SOFTWARE)-linux-$${arch} ; \
-		cd $(PWD) ; \
-	done ; \
-
-release-darwin: setup-release gopath-spoof
-	@for arch in $(ARCHS); do \
-		GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
-		GOOS=darwin GOARCH=$${arch} \
-			go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-				$(VERBOSE) \
-				-o $(BUILD_TMP)/$(SOFTWARE)-darwin-$${arch} ; \
-		cd $(BUILD_TMP) ; \
-		tar -zcf \
-			$(RELEASE)/$(SOFTWARE)-darwin-$${arch}-$(VERSION).tar.gz \
-			$(SOFTWARE)-darwin-$${arch} ; \
-		cd $(PWD) ; \
-	done ; \
-
-release-windows: setup-release gopath-spoof
-	@for arch in $(ARCHS); do \
-		GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
-		GOOS=windows GOARCH=$${arch} \
-			go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-				$(VERBOSE) \
-				-o $(BUILD_TMP)/$(SOFTWARE)-windows-$${arch}.exe ; \
-		cd $(BUILD_TMP) ; \
-		tar -zcf \
-			$(RELEASE)/$(SOFTWARE)-windows-$${arch}-$(VERSION).tar.gz \
-			$(SOFTWARE)-windows-$${arch}.exe ; \
-		cd $(PWD) ; \
-	done ; \
-
-release-freebsd: setup-release gopath-spoof
-	@for arch in $(ARCHS); do \
-		GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
-		GOOS=freebsd GOARCH=$${arch} \
-			go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-				$(VERBOSE) \
-				-o $(BUILD_TMP)/$(SOFTWARE)-freebsd-$${arch} ; \
-		cd $(BUILD_TMP) ; \
-		tar -zcf \
-			$(RELEASE)/$(SOFTWARE)-freebsd-$${arch}-$(VERSION).tar.gz \
-			$(SOFTWARE)-freebsd-$${arch} ; \
+			$(RELEASE_PATH)/$(SOFTWARE)-$${GOOS}-$${arch}-$(VERSION).tar.gz \
+			$(SOFTWARE)-$${GOOS}-$${arch} ; \
 		cd $(PWD) ; \
 	done ; \
 
 release-arms: setup-release gopath-spoof
-	@for v in $(ARMS); do \
-	GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
-	GOOS=linux GOARCH=arm GOARM=$${v} \
-		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-			$(VERBOSE) \
-			-o $(BUILD_TMP)/$(SOFTWARE)-linux-arm$${v} ; \
+	@ \
+	for v in $(ARMS); do \
+		printf "    \x1b[32mGOOS=linux \x1b[33mGOARCH=arm \x1b[35mGOARM=$${v} \x1b[36mGC\x1b[0m\n" ; \
+		GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
+		GOOS=linux GOARCH=arm GOARM=$${v} \
+			$(GC) -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
+				$(VERBOSE) \
+				-o $(BUILD_TMP)/$(SOFTWARE)-linux-arm$${v} ; \
 	done ; \
 	if hash upx 2>/dev/null; then \
 		upx -9 $(SOFTWARE)-linux-arm* ; \
 	fi ; \
 	cd $(BUILD_TMP) ; \
 	tar -zcf \
-		$(RELEASE)/$(SOFTWARE)-linux-arm-$(VERSION).tar.gz \
+		$(RELEASE_PATH)/$(SOFTWARE)-linux-arm-$(VERSION).tar.gz \
 		$(SOFTWARE)-linux-arm*
 
 release-mipsle: setup-release gopath-spoof
-	@GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
-	GOOS=linux GOARCH=mipsle \
-		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-			$(VERBOSE) \
-			-o $(BUILD_TMP)/$(SOFTWARE)-linux-mipsle ; \
+	@ \
+	printf "    \x1b[32mGOOS=linux \x1b[33mGOARCH=mipsle \x1b[36mGC\x1b[0m\n" ; \
 	GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
 	GOOS=linux GOARCH=mipsle \
-		go build -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
+		$(GC) -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
+			$(VERBOSE) \
+			-o $(BUILD_TMP)/$(SOFTWARE)-linux-mipsle ; \
+	printf "    \x1b[32mGOOS=linux \x1b[33mGOARCH=mips \x1b[36mGC\x1b[0m\n" ; \
+	GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
+	GOOS=linux GOARCH=mips \
+		$(GC) -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
 			$(VERBOSE) \
 			-o $(BUILD_TMP)/$(SOFTWARE)-linux-mips ; \
 	if hash upx 2>/dev/null; then \
@@ -148,19 +122,20 @@ release-mipsle: setup-release gopath-spoof
 	fi ; \
 	cd $(BUILD_TMP) ; \
 	tar -zcf \
-		$(RELEASE)/$(SOFTWARE)-linux-mipsle-$(VERSION).tar.gz \
+		$(RELEASE_PATH)/$(SOFTWARE)-linux-mipsle-$(VERSION).tar.gz \
 		$(SOFTWARE)-linux-mipsle ; \
 	tar -zcf \
-		$(RELEASE)/$(SOFTWARE)-linux-mips-$(VERSION).tar.gz \
+		$(RELEASE_PATH)/$(SOFTWARE)-linux-mips-$(VERSION).tar.gz \
 		$(SOFTWARE)-linux-mips
 
 release-chksum:
 	@echo
-	cd $(RELEASE); $(SUM) *
+	cd $(RELEASE_PATH); $(SUM) *
 	@echo
 
 install-dep:
-	@if ! type glide > /dev/null 2>&1 ; then \
+	@ \
+	if ! type glide > /dev/null 2>&1 ; then \
 		if [ ! -d $$GOPATH/bin/glide ]; then \
 			go get -u github.com/Masterminds/glide ; \
 		fi ; \
@@ -184,7 +159,7 @@ clean-dep:
 
 clean: clean-tmp
 	rm -f $(PWD)/$(SOFTWARE)
-	rm -rf $(RELEASE)
+	rm -rf $(RELEASE_PATH)
 
 .PHONY: love \
 	release \
