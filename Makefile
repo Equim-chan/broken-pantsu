@@ -15,30 +15,54 @@
 SOFTWARE := broken-pantsu
 
 SHELL := /bin/bash
-READLINK := "$(shell if type greadlink > /dev/null 2>&1 ; then echo greadlink; else echo readlink; fi)"
+READLINK := $(shell if type greadlink > /dev/null 2>&1 ; then echo greadlink; else echo readlink; fi)
 
 RELEASE_PATH := "$(shell $(READLINK) -f ./release)"
 BUILD_TMP := "$(shell $(READLINK) -f ./tmp)"
 PWD := "$(shell pwd)"
-VERSION := $(shell cat ./semver)+build$(shell date -u +%y%m%d)
-
-GC := go build
-LDFLAGS := "-X main.VERSION=$(VERSION) -s -w"
-GCFLAGS := ""
-
-SUM := sha1sum
 
 ARCHS := amd64 386
 ARMS := 5 6 7
 
+VERSION := $(shell cat ./semver)+build$(shell date -u +%y%m%d)
+LDFLAGS := -X main.VERSION=$(VERSION) -s -w
+GCFLAGS :=
 ifdef V
 VERBOSE := -x
 endif
 
+OUT_FILENAME := "$(SOFTWARE)-$${goos}-$${goarch}$${goarm}$${suffix}"
+
+# use printf instead of echo so that colors can print properly in windows cmd
+PRINT := \
+	if [ "$${goarm}" != "" ]; then \
+		printf "    \x1b[32mGOOS=$${goos} \x1b[33mGOARCH=$${goarch} \x1b[35mGOARM=$${goarm} \x1b[1;36mGC\x1b[0m\n" ; \
+	else \
+		printf "    \x1b[32mGOOS=$${goos} \x1b[33mGOARCH=$${goarch} \x1b[1;36mGC\x1b[0m\n" ; \
+	fi
+
+GC := \
+	$(PRINT) ; \
+	GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
+	GOOS=$${goos} GOARCH=$${goarch} GOARM=$${goarm} \
+		go build \
+			-ldflags "$(LDFLAGS)" -gcflags "$(GCFLAGS)" \
+			$(VERBOSE) \
+			-o $(BUILD_TMP)/$(OUT_FILENAME)
+
+PACK := \
+	cd $(BUILD_TMP) ; \
+	tar -zcf \
+		$(RELEASE_PATH)/"$(SOFTWARE)-$${goos}-$${goarch}$${goarm}-$(VERSION).tar.gz" \
+		$(OUT_FILENAME) ; \
+	cd $(PWD)
+
+SUM := sha1sum
+
 love: setup-tmp \
 	install-dep \
 	gopath-spoof \
-	build
+	build-local
 
 	make clean-tmp
 
@@ -52,81 +76,51 @@ release: setup-tmp \
 	release-freebsd \
 	release-openbsd \
 	release-arms \
-	release-mipsle
+	release-mips
 
 	make clean-tmp
 	make release-chksum
 
-build:
-	@# use printf instead of echo so that colors can print in windows cmd
+build-local:
 	@ \
-	printf "    \x1b[32mGOOS=`go env GOOS` \x1b[33mGOARCH=`go env GOARCH` \x1b[36mGC\x1b[0m\n" ; \
-	GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
-		$(GC) -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-			$(VERBOSE) \
-			-o $(SOFTWARE)
+	goos=`go env GOOS` goarch=`go env GOARCH` goarm=`go env GOARM` suffix=`go env GOEXE` ; \
+	$(GC) ; \
+	mv $(BUILD_TMP)/$(OUT_FILENAME) $(PWD)/
 
 setup-release:
+	rm -rf $(RELEASE_PATH)
 	mkdir -p $(RELEASE_PATH)
 
 release-%: setup-release gopath-spoof
 	@ \
-	GOOS=$(subst release-,,$@) ; \
-	for arch in $(ARCHS); do \
-		printf "    \x1b[32mGOOS=$${GOOS} \x1b[33mGOARCH=$${arch} \x1b[36mGC\x1b[0m\n" ; \
-		GOPATH=$(BUILD_TMP) CGO_ENABLED=0 GOARCH=$${arch} \
-			$(GC) -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-				$(VERBOSE) \
-				-o $(BUILD_TMP)/$(SOFTWARE)-$${GOOS}-$${arch} ; \
-		cd $(BUILD_TMP) ; \
-		tar -zcf \
-			$(RELEASE_PATH)/$(SOFTWARE)-$${GOOS}-$${arch}-$(VERSION).tar.gz \
-			$(SOFTWARE)-$${GOOS}-$${arch} ; \
-		cd $(PWD) ; \
-	done ; \
+	goos=$(subst release-,,$@) ; \
+	if [ "$${goos}" == "windows" ]; then \
+		suffix=".exe" ; \
+	fi ; \
+	for goarch in $(ARCHS); do \
+		$(GC) ; \
+		$(PACK) ; \
+	done
 
 release-arms: setup-release gopath-spoof
 	@ \
-	for v in $(ARMS); do \
-		printf "    \x1b[32mGOOS=linux \x1b[33mGOARCH=arm \x1b[35mGOARM=$${v} \x1b[36mGC\x1b[0m\n" ; \
-		GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
-		GOOS=linux GOARCH=arm GOARM=$${v} \
-			$(GC) -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-				$(VERBOSE) \
-				-o $(BUILD_TMP)/$(SOFTWARE)-linux-arm$${v} ; \
-	done ; \
-	if hash upx 2>/dev/null; then \
-		upx -9 $(SOFTWARE)-linux-arm* ; \
-	fi ; \
-	cd $(BUILD_TMP) ; \
-	tar -zcf \
-		$(RELEASE_PATH)/$(SOFTWARE)-linux-arm-$(VERSION).tar.gz \
-		$(SOFTWARE)-linux-arm*
+	goos=linux goarch=arm64 ; \
+	$(GC) ; \
+	$(PACK) ; \
+	goarch=arm ; \
+	for goarm in $(ARMS); do \
+		$(GC) ; \
+		$(PACK) ; \
+	done
 
-release-mipsle: setup-release gopath-spoof
+release-mips: setup-release gopath-spoof
 	@ \
-	printf "    \x1b[32mGOOS=linux \x1b[33mGOARCH=mipsle \x1b[36mGC\x1b[0m\n" ; \
-	GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
-	GOOS=linux GOARCH=mipsle \
-		$(GC) -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-			$(VERBOSE) \
-			-o $(BUILD_TMP)/$(SOFTWARE)-linux-mipsle ; \
-	printf "    \x1b[32mGOOS=linux \x1b[33mGOARCH=mips \x1b[36mGC\x1b[0m\n" ; \
-	GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
-	GOOS=linux GOARCH=mips \
-		$(GC) -ldflags $(LDFLAGS) -gcflags $(GCFLAGS) \
-			$(VERBOSE) \
-			-o $(BUILD_TMP)/$(SOFTWARE)-linux-mips ; \
-	if hash upx 2>/dev/null; then \
-		upx -9 ${SOFTWARE}-linux-mips* ; \
-	fi ; \
-	cd $(BUILD_TMP) ; \
-	tar -zcf \
-		$(RELEASE_PATH)/$(SOFTWARE)-linux-mipsle-$(VERSION).tar.gz \
-		$(SOFTWARE)-linux-mipsle ; \
-	tar -zcf \
-		$(RELEASE_PATH)/$(SOFTWARE)-linux-mips-$(VERSION).tar.gz \
-		$(SOFTWARE)-linux-mips
+	goos=linux goarch=mipsle ; \
+	$(GC) ; \
+	$(PACK) ; \
+	goos=linux goarch=mips ; \
+	$(GC) ; \
+	$(PACK)
 
 release-chksum:
 	@echo
@@ -158,16 +152,14 @@ clean-dep:
 	rm -rf $(PWD)/vendor
 
 clean: clean-tmp
-	rm -f $(PWD)/$(SOFTWARE)
+	rm -f $(PWD)/"$(SOFTWARE)-`go env GOOS`-`go env GOARCH``go env GOARM``go env GOEXE`"
 	rm -rf $(RELEASE_PATH)
 
 .PHONY: love \
 	release \
-	build \
+	build-local \
 	setup-release \
-	release-linux-darwin-windows-freebsd \
-	release-arms \
-	release-mipsle \
+	release-% \
 	release-chksum \
 	install-dep \
 	gopath-spoof \
