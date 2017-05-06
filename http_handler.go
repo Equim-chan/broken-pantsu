@@ -28,7 +28,7 @@ import (
 )
 
 var (
-	cookieAge time.Duration
+	cookieExpires time.Duration
 
 	staticPath  string
 	indexPath   string
@@ -50,10 +50,10 @@ func init() {
 	serveStatic = http.FileServer(http.Dir(staticPath)).ServeHTTP
 	indexPath = filepath.Join(staticPath, "/index.html")
 
-	if e, ok := os.LookupEnv("BP_COOKIE_AGE"); !ok {
-		cookieAge = time.Hour * 168 // 168 == 24 * 7
-	} else if cookieAge, err = time.ParseDuration(e); err != nil {
-		log.Fatalln("BP_COOKIE_AGE:", err)
+	if e, ok := os.LookupEnv("BP_COOKIE_EXP"); !ok {
+		cookieExpires = time.Hour * 48
+	} else if cookieExpires, err = time.ParseDuration(e); err != nil {
+		log.Fatalln("BP_COOKIE_EXP:", err)
 	}
 
 	http.HandleFunc("/", handleRoot)
@@ -67,14 +67,18 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := r.Cookie("token"); err != nil {
-		token := uuid.NewV4().String()
-		exp := time.Now().Add(cookieAge)
+	var tokenCookie *http.Cookie
+	exp := time.Now().Add(cookieExpires)
 
-		tokenCookie := &http.Cookie{Name: "token", Value: token, Expires: exp}
-		http.SetCookie(w, tokenCookie)
+	if tokenCookie, _ = r.Cookie("token"); tokenCookie == nil {
+		token := uuid.NewV4().String()
+		tokenCookie = &http.Cookie{Name: "token", Value: token, Expires: exp}
+	} else {
+		// renew expires
+		tokenCookie.Expires = exp
 	}
 
+	http.SetCookie(w, tokenCookie)
 	http.ServeFile(w, r, indexPath)
 }
 

@@ -172,10 +172,15 @@ func (c *Client) runRecvQueue() {
 			default:
 				break
 			}
-		} else if c.Partner != nil {
-			// expose the message to outter process
-			c.RecvQueue <- &inMsg
+			continue
 		}
+
+		if c.Partner == nil {
+			continue
+		}
+
+		// expose the message to outter process
+		c.RecvQueue <- &inMsg
 	}
 }
 
