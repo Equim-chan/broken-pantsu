@@ -15,11 +15,12 @@
 SOFTWARE := broken-pantsu
 
 SHELL := /bin/bash
-READLINK := $(shell if type greadlink > /dev/null 2>&1 ; then echo greadlink; else echo readlink; fi)
+MAKE := make --no-print-directory
 
-RELEASE_PATH := "$(shell $(READLINK) -f ./release)"
-BUILD_TMP := "$(shell $(READLINK) -f ./tmp)"
-PWD := "$(shell pwd)"
+PROJECT_ROOT := "$(shell pwd)"
+RELEASE_PATH := $(PROJECT_ROOT)/release
+BUILD_TMP := $(PROJECT_ROOT)/tmp
+MOCK_GOPATH := $(BUILD_TMP)/gopath
 
 ARCHS := amd64 386
 ARMS := 5 6 7
@@ -43,7 +44,7 @@ PRINT := \
 
 GC := \
 	$(PRINT) ; \
-	GOPATH=$(BUILD_TMP) CGO_ENABLED=0 \
+	GOPATH=$(MOCK_GOPATH) CGO_ENABLED=0 \
 	GOOS=$${goos} GOARCH=$${goarch} GOARM=$${goarm} \
 		go build \
 			-ldflags "$(LDFLAGS)" -gcflags "$(GCFLAGS)" \
@@ -55,21 +56,18 @@ PACK := \
 	tar -zcf \
 		$(RELEASE_PATH)/"$(SOFTWARE)-$${goos}-$${goarch}$${goarm}-$(VERSION).tar.gz" \
 		$(OUT_FILENAME) ; \
-	cd $(PWD)
+	cd $(PROJECT_ROOT)
 
 SUM := sha1sum
 
-love: setup-tmp \
-	install-dep \
-	gopath-spoof \
-	build-local
+love: setup
+	@ \
+	goos=`go env GOOS` goarch=`go env GOARCH` goarm=`go env GOARM` suffix=`go env GOEXE` ; \
+	$(GC) ; \
+	mv $(BUILD_TMP)/$(OUT_FILENAME) $(PROJECT_ROOT)/
+	@$(MAKE) clean-tmp
 
-	make clean-tmp
-
-release: setup-tmp \
-	setup-release \
-	install-dep \
-	gopath-spoof \
+release: setup-release \
 	release-linux \
 	release-darwin \
 	release-windows \
@@ -78,20 +76,35 @@ release: setup-tmp \
 	release-arms \
 	release-mips
 
-	make clean-tmp
-	make release-chksum
+	@$(MAKE) clean-tmp
+	@$(MAKE) release-chksum
 
-build-local:
-	@ \
-	goos=`go env GOOS` goarch=`go env GOARCH` goarm=`go env GOARM` suffix=`go env GOEXE` ; \
-	$(GC) ; \
-	mv $(BUILD_TMP)/$(OUT_FILENAME) $(PWD)/
+setup:
+	@$(MAKE) clean-tmp
+	mkdir -p $(BUILD_TMP)
+	@$(MAKE) install-dep
+	@$(MAKE) gopath-spoof
 
-setup-release:
+setup-release: setup
 	rm -rf $(RELEASE_PATH)
 	mkdir -p $(RELEASE_PATH)
 
-release-%: setup-release gopath-spoof
+install-dep:
+	@ \
+	if ! type glide > /dev/null 2>&1 ; then \
+		if [ ! -d "$${GOPATH}/bin/glide" ]; then \
+			go get -u github.com/Masterminds/glide ; \
+		fi ; \
+		"$${GOPATH}/bin/glide" install ; \
+	else \
+		glide install ; \
+	fi
+
+gopath-spoof:
+	mkdir -p $(MOCK_GOPATH)
+	ln -sf $(PROJECT_ROOT)/vendor $(MOCK_GOPATH)/src
+
+release-%: setup-release
 	@ \
 	goos=$(subst release-,,$@) ; \
 	if [ "$${goos}" == "windows" ]; then \
@@ -102,7 +115,7 @@ release-%: setup-release gopath-spoof
 		$(PACK) ; \
 	done
 
-release-arms: setup-release gopath-spoof
+release-arms: setup-release
 	@ \
 	goos=linux goarch=arm64 ; \
 	$(GC) ; \
@@ -113,7 +126,7 @@ release-arms: setup-release gopath-spoof
 		$(PACK) ; \
 	done
 
-release-mips: setup-release gopath-spoof
+release-mips: setup-release
 	@ \
 	goos=linux goarch=mipsle ; \
 	$(GC) ; \
@@ -123,47 +136,30 @@ release-mips: setup-release gopath-spoof
 	$(PACK)
 
 release-chksum:
-	@echo
-	cd $(RELEASE_PATH); $(SUM) *
-	@echo
-
-install-dep:
 	@ \
-	if ! type glide > /dev/null 2>&1 ; then \
-		if [ ! -d $$GOPATH/bin/glide ]; then \
-			go get -u github.com/Masterminds/glide ; \
-		fi ; \
-		$$GOPATH/bin/glide install ; \
-	else \
-		glide install ; \
-	fi
-
-gopath-spoof: setup-tmp install-dep
-	ln -s $(PWD)/vendor $(BUILD_TMP)/src
-
-setup-tmp:
-	make clean-tmp
-	mkdir -p $(BUILD_TMP)
+	cd $(RELEASE_PATH) ; \
+	$(SUM) * > ./chksum.txt ; \
+	echo ; \
+	cat ./chksum.txt ; \
+	cd $(PROJECT_ROOT)
 
 clean-tmp:
 	rm -rf $(BUILD_TMP)
 
 clean-dep:
-	rm -rf $(PWD)/vendor
+	rm -rf $(PROJECT_ROOT)/vendor
 
 clean: clean-tmp
-	rm -f $(PWD)/"$(SOFTWARE)-`go env GOOS`-`go env GOARCH``go env GOARM``go env GOEXE`"
+	rm -f $(PROJECT_ROOT)/"$(SOFTWARE)-$(shell go env GOOS)-$(shell go env GOARCH)$(shell go env GOARM)$(shell go env GOEXE)"
 	rm -rf $(RELEASE_PATH)
 
 .PHONY: love \
 	release \
-	build-local \
+	setup \
 	setup-release \
-	release-% \
-	release-chksum \
 	install-dep \
 	gopath-spoof \
-	setup-tmp \
+	release-% \
 	clean-tmp \
 	clean-dep \
 	clean
