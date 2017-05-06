@@ -29,6 +29,7 @@ import (
 
 var (
 	cookieExpires time.Duration
+	cookieMaxAge  int
 
 	staticPath  string
 	indexPath   string
@@ -56,6 +57,8 @@ func init() {
 		log.Fatalln("BP_COOKIE_EXP:", err)
 	}
 
+	cookieMaxAge = int(cookieExpires.Seconds())
+
 	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/loveStream", handleLove)
 }
@@ -72,10 +75,16 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 
 	if tokenCookie, _ = r.Cookie("token"); tokenCookie == nil {
 		token := uuid.NewV4().String()
-		tokenCookie = &http.Cookie{Name: "token", Value: token, Expires: exp}
+		tokenCookie = &http.Cookie{
+			Name:    "token",
+			Value:   token,
+			Expires: exp,
+			MaxAge:  cookieMaxAge,
+		}
 	} else {
 		// renew expires
 		tokenCookie.Expires = exp
+		tokenCookie.MaxAge = cookieMaxAge
 	}
 
 	http.SetCookie(w, tokenCookie)
