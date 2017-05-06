@@ -12,14 +12,8 @@
 
 ## Setup
 ```shell
-$ go get -u github.com/Equim-chan/broken-pantsu
-$ $GOPATH/bin/broken-pantsu
-```
-or manually
-```shell
 $ git clone git@github.com:Equim-chan/broken-pantsu.git
 $ make
-$ ./broken-pantsu
 ```
 Build executable files for all platforms and archs
 ```shell
